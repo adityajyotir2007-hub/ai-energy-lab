@@ -1,0 +1,12 @@
+psutil
+pandas
+plotly
+streamlit
+requests
+codecarbon
+pynvml; sys_platform != "darwin"
+# only needed for bench_hf.py
+torch
+transformers
+accelerate
+pytest

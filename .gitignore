@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+.pytest_cache/
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Backups
+backups/
+data/backups/
+*.backup.*
+*.bak
+*.bak.*
+
+# Generated benchmark results
+data/results/*
+!data/results/.gitkeep
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+# Old application copies
+app_backup.py
+app_before_arena.py
+app_original_backup.py
+app_redesigned.py
+
+# Old module copies
+aienergy/model_arena_claude.py/
+aienergy/model_arena_backup.py
+aienergy/model_arena_before_restore.py
+aienergy/model_arena (2).py
+aienergy/profiles.py.bak
+tests/*.bak
+aienergy/model_arena_backup_before_claude.py
+data/campus_chatbot_results.csv
