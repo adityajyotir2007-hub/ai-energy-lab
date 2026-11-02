@@ -84,12 +84,9 @@ class PowerMeter:
         sample_coverage
     """
 
-    def __init__(
-        self,
-        interval: float = 0.25,
-        cpu_tdp_w: float = 65.0,
-        cpu_idle_w: float = 8.0,
-    ):
+   
+    def __init__(self, interval=0.25, cpu_tdp_w=15.0, cpu_idle_w=3.0):
+    
         if interval <= 0:
             raise ValueError("interval must be greater than zero")
 

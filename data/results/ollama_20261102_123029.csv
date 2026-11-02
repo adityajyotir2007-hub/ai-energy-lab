@@ -1,0 +1,10 @@
+ts,backend,machine,model,params_b,prompt_id,rep,prompt_tokens,out_tokens,wall_s,prefill_tok_s,gen_tok_s,joules,avg_w,idle_w,active_j,j_per_out_token,method,cpu_method,gpu_method,cpu_joules,gpu_joules,cpu_avg_w,gpu_avg_w,sample_coverage,gpu_sample_coverage,codecarbon_kg
+2026-11-02T12:28:25,ollama,jyotiaditya,llama3.2:1b,1.0,short,0,41,30,4.076,97.2,18.73,34.63,8.82,4.61,16.54,0.5514,cpu_util_model,cpu_util_model,unavailable,34.63,0.0,8.82,0.0,0.9629,0.0,
+2026-11-02T12:28:29,ollama,jyotiaditya,llama3.2:1b,1.0,short,1,41,30,3.969,110.85,19.58,35.74,9.18,4.61,17.8,0.5933,cpu_util_model,cpu_util_model,unavailable,35.74,0.0,9.18,0.0,0.9809,0.0,
+2026-11-02T12:28:33,ollama,jyotiaditya,llama3.2:1b,1.0,short,2,42,30,3.951,101.51,20.25,33.35,8.48,4.61,15.23,0.5075,cpu_util_model,cpu_util_model,unavailable,33.35,0.0,8.48,0.0,0.9952,0.0,
+2026-11-02T12:28:37,ollama,jyotiaditya,llama3.2:1b,1.0,medium,0,61,30,4.158,94.62,20.73,29.2,7.42,4.61,11.07,0.3689,cpu_util_model,cpu_util_model,unavailable,29.2,0.0,7.42,0.0,0.9463,0.0,
+2026-11-02T12:28:41,ollama,jyotiaditya,llama3.2:1b,1.0,medium,1,60,30,4.231,87.2,20.15,31.05,7.42,4.61,11.75,0.3918,cpu_util_model,cpu_util_model,unavailable,31.05,0.0,7.42,0.0,0.9892,0.0,
+2026-11-02T12:28:46,ollama,jyotiaditya,llama3.2:1b,1.0,medium,2,61,30,4.709,82.17,15.76,45.21,10.12,4.61,24.62,0.8206,cpu_util_model,cpu_util_model,unavailable,45.21,0.0,10.12,0.0,0.9487,0.0,
+2026-11-02T12:29:20,ollama,jyotiaditya,llama3.2:1b,1.0,long_context,0,1666,30,34.398,55.37,13.42,401.79,11.71,4.61,243.66,8.122,cpu_util_model,cpu_util_model,unavailable,401.79,0.0,11.71,0.0,0.9972,0.0,
+2026-11-02T12:29:54,ollama,jyotiaditya,llama3.2:1b,1.0,long_context,1,1665,30,33.592,56.46,14.9,370.97,11.07,4.61,216.53,7.2175,cpu_util_model,cpu_util_model,unavailable,370.97,0.0,11.07,0.0,0.9974,0.0,
+2026-11-02T12:30:27,ollama,jyotiaditya,llama3.2:1b,1.0,long_context,2,1664,30,33.74,56.48,13.85,373.12,11.06,4.61,217.63,7.2544,cpu_util_model,cpu_util_model,unavailable,373.12,0.0,11.06,0.0,0.9997,0.0,
