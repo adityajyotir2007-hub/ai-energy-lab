@@ -4,13 +4,11 @@ WORKDIR /app
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    HF_HOME=/tmp/huggingface \
     STREAMLIT_BROWSER_GATHER_USAGE_STATS=false \
     STREAMLIT_SERVER_HEADLESS=true
 
 COPY requirements-web.txt .
-RUN pip install --no-cache-dir -r requirements-web.txt && \
-    pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu torch transformers accelerate
+RUN pip install --no-cache-dir -r requirements-web.txt
 
 COPY . .
 
