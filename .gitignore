@@ -6,10 +6,11 @@ __pycache__/
 venv/
 .pytest_cache/
 
-# Secrets
+# Secrets & local Streamlit credentials
 .env
 .env.*
 !.env.example
+.streamlit/credentials.toml
 
 # Backups
 backups/
@@ -18,9 +19,15 @@ data/backups/
 *.bak
 *.bak.*
 
-# Generated benchmark results
+# Generated benchmark results (keep canonical benchmark & quality audit CSVs tracked)
 data/results/*
 !data/results/.gitkeep
+!data/results/ollama_20261025_105232.csv
+!data/results/ollama_20261025_110530.csv
+!data/results/ollama_20261025_123418.csv
+!data/results/ollama_20261025_155531.csv
+!data/results/ollama_20261102_123029.csv
+!data/results/phase1_quality_manual_audit.csv
 
 # OS and editor files
 .DS_Store

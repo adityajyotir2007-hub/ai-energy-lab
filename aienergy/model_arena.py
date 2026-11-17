@@ -1,13 +1,20 @@
+import importlib.util
 import time
 from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
-import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from aienergy.meter import PowerMeter
+
+_HAS_LOCAL_ML = (
+    importlib.util.find_spec("torch") is not None
+    and importlib.util.find_spec("transformers") is not None
+)
+
+_VER = tuple(int(x) for x in st.__version__.split(".")[:2] if x.isdigit())
+STRETCH = {"width": "stretch"} if _VER >= (1, 50) else {"use_container_width": True}
 
 
 SMALL_MODELS = {
@@ -25,6 +32,7 @@ HISTORY_FILE = Path("data/results/model_arena_history.csv")
 
 @st.cache_resource(show_spinner=False)
 def load_model(model_id):
+    from transformers import AutoModelForCausalLM, AutoTokenizer
     tokenizer = AutoTokenizer.from_pretrained(model_id)
     model = AutoModelForCausalLM.from_pretrained(model_id)
     model.eval()
@@ -70,6 +78,7 @@ def run_model(model_id, prompt, max_new_tokens):
 
     try:
         with meter:
+            import torch
             start_time = time.perf_counter()
 
             with torch.inference_mode():
@@ -194,7 +203,7 @@ def render_response_panel(result, title, key_prefix):
         file_name=f"{key_prefix}_model_response.txt",
         mime="text/plain",
         key=f"download_{key_prefix}_response",
-        use_container_width=True,
+        **STRETCH,
     )
 
 
@@ -217,7 +226,7 @@ def render_comparison(results):
         file_name="model_arena_both_responses.txt",
         mime="text/plain",
         key="download_both_responses",
-        use_container_width=True,
+        **STRETCH,
     )
     st.caption("Use the copy icon at the top-right of a response box to copy the full response.")
 
@@ -250,7 +259,7 @@ def render_comparison(results):
             "Better result": winner,
         })
 
-    st.dataframe(pd.DataFrame(table), use_container_width=True, hide_index=True)
+    st.dataframe(pd.DataFrame(table), hide_index=True, **STRETCH)
 
     st.subheader("3. Overall comparison")
     faster = (
@@ -279,6 +288,22 @@ def render_comparison(results):
         "Review both responses to judge quality. Repeat runs for more reliable averages."
     )
 
+    st.markdown("##### 🗳️ Human Qualitative Evaluation")
+    st.caption("Did the heavier model's response noticeably justify its higher energy draw?")
+    vote_c1, vote_c2, vote_c3 = st.columns(3)
+    if vote_c1.button("👍 Small Model Was Good Enough", key="vote_small", **STRETCH):
+        st.success("Vote recorded! Compact models frequently satisfy user needs with a fraction of the energy.")
+        st.session_state["arena_vote"] = "Small Model"
+    if vote_c2.button("🌟 Heavy Model Was Noticeably Better", key="vote_heavy", **STRETCH):
+        st.info("Vote recorded! Additional parameters provided superior nuance for this prompt.")
+        st.session_state["arena_vote"] = "Heavy Model"
+    if vote_c3.button("🤝 Indistinguishable Quality", key="vote_tie", **STRETCH):
+        st.warning("Vote recorded! When quality is tied, deploying the larger model is pure resource waste.")
+        st.session_state["arena_vote"] = "Tie"
+
+    if "arena_vote" in st.session_state:
+        st.markdown(f"**Your recorded judgment:** <span class='badge badge-teal'>{st.session_state['arena_vote']}</span>", unsafe_allow_html=True)
+
     st.divider()
     st.subheader("4. Detailed run data")
     details = pd.DataFrame([
@@ -294,7 +319,7 @@ def render_comparison(results):
         }
         for result in results
     ])
-    st.dataframe(details, use_container_width=True, hide_index=True)
+    st.dataframe(details, hide_index=True, **STRETCH)
 
     export_df = pd.DataFrame([
         {key: value for key, value in result.items() if key != "answer"}
@@ -305,6 +330,7 @@ def render_comparison(results):
         data=export_df.to_csv(index=False).encode("utf-8"),
         file_name="model_arena_comparison.csv",
         mime="text/csv",
+        **STRETCH,
     )
 
 
@@ -334,6 +360,13 @@ def render_model_arena():
         "Compare a lightweight language model with a larger model using "
         "the same prompt and generation settings."
     )
+
+    if not _HAS_LOCAL_ML:
+        st.info(
+            "Live Model Arena requires `torch` and `transformers` to run Hugging Face models on-device. "
+            "In this lightweight web deployment, live inference is disabled — run locally with `.venv` to test models live."
+        )
+        return
 
     st.info(
         "Models run sequentially on your computer. Larger models can take "
@@ -367,12 +400,25 @@ def render_model_arena():
 
     st.divider()
     st.markdown("### Prompt laboratory")
+
+    presets = [
+        ("💡 Explain AI Simply", "Explain artificial intelligence in simple words for a beginner."),
+        ("📜 Extension Policy", "A student was ill for three days. How can they request a coursework extension and what evidence is required?"),
+        ("🐍 Python Fibonacci", "Write a concise, optimal Python function to compute the Nth Fibonacci number with docstring."),
+        ("⚡ Energy Efficiency", "Explain why smaller language models are significantly more energy-efficient during inference than large models."),
+    ]
+    st.caption("Quick presets:")
+    pr_cols = st.columns(len(presets))
+    for col, (pr_label, pr_text) in zip(pr_cols, presets):
+        if col.button(pr_label, key=f"btn_{pr_label}", **STRETCH):
+            st.session_state["arena_prompt"] = pr_text
+
     prompt = st.text_area(
         "Enter the prompt to send to both models",
-        value="Explain artificial intelligence in simple words.",
+        value=st.session_state.get("arena_prompt", "Explain artificial intelligence in simple words."),
         height=130,
         placeholder="Type your prompt here...",
-        key="arena_prompt",
+        key="arena_prompt_input",
     )
 
     max_new_tokens = st.slider(
@@ -393,7 +439,7 @@ def render_model_arena():
     if st.button(
         "Run small vs heavy comparison",
         type="primary",
-        use_container_width=True,
+        **STRETCH,
     ):
         if not prompt.strip():
             st.warning("Enter a prompt first.")
@@ -442,12 +488,13 @@ def render_model_arena():
         with st.expander("Previous comparison history"):
             try:
                 history = pd.read_csv(HISTORY_FILE)
-                st.dataframe(history, use_container_width=True)
+                st.dataframe(history, **STRETCH)
                 st.download_button(
                     "Download full comparison history",
                     data=history.to_csv(index=False).encode("utf-8"),
                     file_name="model_arena_history.csv",
                     mime="text/csv",
+                    **STRETCH,
                 )
             except Exception as exc:
                 st.warning(f"Could not read comparison history: {exc}")

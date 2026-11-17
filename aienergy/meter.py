@@ -27,6 +27,17 @@ from datetime import datetime
 import pandas as pd
 import psutil
 
+
+def _read_cpu_frequency_mhz():
+    """Read current CPU frequency in MHz without subprocess overhead."""
+    try:
+        freq = psutil.cpu_freq()
+        if freq and freq.current:
+            return float(freq.current)
+    except Exception:
+        pass
+    return None
+
 # Use the maintained NVIDIA bindings directly.
 # NVIDIA Management Library (provided by nvidia-ml-py).
 try:
@@ -109,6 +120,7 @@ class PowerMeter:
         self._covered = 0.0
         self._gpu_covered = 0.0
         self.sample_coverage = 0.0
+        self.cpu_frequency_samples = []
 
         self.cpu_method = (
             "rapl_pkg" if _RAPL else "cpu_util_model"
@@ -193,7 +205,10 @@ class PowerMeter:
                 cpu_ok = False
 
             gpu_w, gpu_ok = self._gpu_power()
+            frequency_mhz = _read_cpu_frequency_mhz()
 
+            if frequency_mhz is not None:
+                self.cpu_frequency_samples.append(frequency_mhz)
             if gpu_ok:
                 self.gpu_joules += gpu_w * dt
                 self._gpu_covered += dt
@@ -207,6 +222,7 @@ class PowerMeter:
         self.gpu_joules = 0.0
         self._covered = 0.0
         self._gpu_covered = 0.0
+        self.cpu_frequency_samples = []
 
         self._stop = threading.Event()
 
@@ -332,6 +348,18 @@ def make_row(
         gpu_joules=round(m.gpu_joules, 2),
         cpu_avg_w=round(m.cpu_avg_w, 2),
         gpu_avg_w=round(m.gpu_avg_w, 2),
+        cpu_frequency_avg_mhz=(
+    round(sum(m.cpu_frequency_samples) / len(m.cpu_frequency_samples), 2)
+    if m.cpu_frequency_samples else None
+),
+cpu_frequency_min_mhz=(
+    round(min(m.cpu_frequency_samples), 2)
+    if m.cpu_frequency_samples else None
+),
+cpu_frequency_max_mhz=(
+    round(max(m.cpu_frequency_samples), 2)
+    if m.cpu_frequency_samples else None
+),
         sample_coverage=round(m.sample_coverage, 4),
         gpu_sample_coverage=round(
     m._gpu_covered / m.seconds if m.seconds > 0 else 0.0, 4),

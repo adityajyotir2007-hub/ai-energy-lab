@@ -1,1 +1,9 @@
-[]
+[
+  {"name": "api-small (PLACEHOLDER prices, verify)", "type": "api",
+   "usd_per_m_in": 0.25, "usd_per_m_out": 1.25, "wh_per_1k_tokens": 0.3},
+  {"name": "api-large (PLACEHOLDER prices, verify)", "type": "api",
+   "usd_per_m_in": 3.0, "usd_per_m_out": 15.0, "wh_per_1k_tokens": 1.5},
+  {"name": "rented-gpu-24GB (PLACEHOLDER specs, verify)", "type": "gpu_rental",
+   "usd_per_hour": 0.8, "gen_tok_s": 60, "prefill_tok_s": 1500, "active_w": 300, "idle_w": 60,
+   "batch_gain": 4.0}
+]

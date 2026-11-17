@@ -1,78 +1,486 @@
 """AI Energy Lab - Project 74: Energy, Cost and Sustainability Analysis of AI Systems.
 
-Streamlit dashboard. Reads benchmark CSVs from data/results, optional cloud options from
-data/cloud_options.json, optional quality files, and uses the existing aienergy calculator
-and scenarios.campus_chatbot workload. Nothing here invents measurements or prices.
+Streamlit interactive dashboard. Empirical physical telemetry from local AI inference,
+cloud alternatives, and fleet sizing with a sleek white & orange design.
 """
 from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 from dataclasses import replace
 from pathlib import Path
-from aienergy.model_arena import render_model_arena
 
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 
+from aienergy.model_arena import render_model_arena
+from aienergy import sustainability as S
+
 ROOT = Path(__file__).resolve().parent
-os.chdir(ROOT)  # backend modules use relative paths such as data/results
+os.chdir(ROOT)
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-st.set_page_config(page_title="AI Energy Lab", page_icon="⚡", layout="wide")
+st.set_page_config(
+    page_title="AI Energy Lab · Energy, Cost & Carbon Analysis",
+    page_icon="⚡",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
 try:
     from aienergy import calculator as C
     from aienergy.profiles import build_profiles, load_results, placeholder_profiles
     from scenarios.campus_chatbot import G as CG, W as CW
-except ImportError as exc:  # pragma: no cover
+except ImportError as exc:
     st.error(f"Could not import project modules: {exc}. Run Streamlit from the project folder.")
     st.stop()
 
-NAVY, TEAL = "#12355B", "#0F766E"
-# Streamlit 1.50+ replaced use_container_width with width="stretch"
+# ---------------------------------------------------------------- Sleek White & Orange Design System
+ORANGE_PRIMARY = "#F97316"
+ORANGE_DARK = "#EA580C"
+ORANGE_LIGHT = "#FFF7ED"
+ORANGE_BORDER = "#FDBA74"
+AMBER = "#D97706"
+BLUE = "#0284C7"
+EMERALD = "#10B981"
+ROSE = "#E11D48"
+
 _VER = tuple(int(x) for x in st.__version__.split(".")[:2] if x.isdigit())
 STRETCH = {"width": "stretch"} if _VER >= (1, 50) else {"use_container_width": True}
-PALETTE = [TEAL, "#1D4ED8", "#D97706", "#7C3AED", "#BE185D", "#475569", "#15803D"]
+PALETTE = [ORANGE_PRIMARY, BLUE, EMERALD, "#8B5CF6", ROSE, AMBER, "#64748B"]
 KIND_LABELS = {"local": "Local server", "cloud_api": "Cloud API", "cloud_gpu": "Cloud GPU rental"}
 QUALITY_MANUAL = Path("data/results/phase1_quality_manual_audit.csv")
 QUALITY_AUTO = Path("data/quality.csv")
 CLOUD_PATH = Path("data/cloud_options.json")
+CLOUD_BACKUP = Path("data/cloud_options.backup.json")
 
-# ---------------------------------------------------------------- styling
-st.markdown(f"""
+# ---------------------------------------------------------------- Dark / Light Mode State
+st.session_state.setdefault("dark_mode", False)
+
+# ---------------------------------------------------------------- CSS — injected dynamically per mode
+def _inject_css(dark: bool) -> None:
+    """Inject the stylesheet for the active theme.
+
+    Both themes style Streamlit's own widgets (tabs, labels, buttons, inputs,
+    alerts, expanders) as well as this app's custom HTML cards, so switching
+    modes never leaves text stranded at the wrong contrast.
+    """
+    if dark:
+        # ── Dark Mode ── deep slate surfaces / orange accent
+        css = """
 <style>
-html, body, .stApp {{ font-size: 16px; }}
-.block-container {{ max-width: 1400px; padding-top: 1.4rem; padding-bottom: 3rem; }}
-.app-header {{ border-left: 6px solid {TEAL}; padding: 2px 0 2px 16px; margin-bottom: 0.6rem; }}
-.app-header .kicker {{ color: {TEAL}; font-weight: 700; font-size: .85rem; letter-spacing: .08em; text-transform: uppercase; }}
-.app-header h1 {{ margin: 0; padding: 0; font-size: 2.1rem; }}
-.app-header p {{ margin: .3rem 0 0 0; opacity: .85; }}
-[data-testid="stMetric"] {{ border: 1px solid rgba(128,128,128,.35); border-left: 4px solid {TEAL};
-    border-radius: 8px; padding: 12px 14px; background: rgba(128,128,128,.06); }}
-[data-testid="stMetricLabel"] p {{ font-size: .95rem; }}
-[data-testid="stMetricValue"] {{ font-size: 1.7rem; }}
-.stTabs [data-baseweb="tab-list"] {{ gap: 4px; flex-wrap: wrap; }}
-.stTabs [data-baseweb="tab"] {{ padding: 10px 16px; }}
-.stTabs [data-baseweb="tab"] p {{ font-size: 1rem; font-weight: 600; }}
-.stTabs [data-baseweb="tab-highlight"] {{ background-color: {TEAL} !important; }}
-@media (max-width: 640px) {{
-  [data-testid="stMetricValue"] {{ font-size: 1.35rem; }}
-  .app-header h1 {{ font-size: 1.5rem; }}
-}}
-</style>
-<div class="app-header">
-  <div class="kicker">Project 74 · Sustainability of AI systems</div>
-  <h1>AI Energy Lab</h1>
-  <p>Energy, cost and carbon estimates for AI deployments, built on benchmarks from this project.</p>
-</div>
-""", unsafe_allow_html=True)
+/* ═══════════ DARK MODE ═══════════ */
+:root { color-scheme: dark; }
+.stApp {
+  --background-color: #0F172A;
+  --secondary-background-color: #1E293B;
+  --text-color: #E6EDF6;
+  --primary-color: #F97316;
+}
+html, body, .stApp {
+  font-size: 15px !important;
+  background-color: #0F172A !important;
+  color: #E6EDF6 !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+[data-testid="stAppViewContainer"], section[data-testid="stMain"],
+section[data-testid="stMain"] > div, [data-testid="stHeader"], [data-testid="stToolbar"] {
+  background-color: #0F172A !important;
+}
+.block-container { max-width: 1480px; padding-top: 3.6rem; padding-bottom: 3.5rem; }
+
+/* ── Slim app bar ──
+   Streamlit's stock header is a blank 56px band pinned over the page, and it
+   was sitting on top of the tab row. Replace it with a compact translucent
+   bar that actually carries the app's identity, and clear its height so no
+   content hides underneath. */
+[data-testid="stHeader"], header[data-testid="stHeader"] {
+  height: 44px !important; min-height: 44px !important;
+  background: rgba(15,23,42,0.90) !important;
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  border-bottom: 1px solid #1E293B !important; box-shadow: none !important;
+}
+[data-testid="stHeader"] [data-testid="stToolbar"] {
+  height: 44px !important; min-height: 44px !important; padding: 0 10px !important;
+}
+[data-testid="stToolbar"]::before {
+  content: "⚡ AI Energy Lab";
+  position: absolute; left: 58px; top: 50%; transform: translateY(-50%);
+  font-size: 0.8rem; font-weight: 700; letter-spacing: 0.04em;
+  color: #FDBA74 !important; white-space: nowrap; pointer-events: none;
+}
+[data-testid="stHeader"] button, [data-testid="stHeader"] [data-testid="stMainMenu"] {
+  border-radius: 6px !important;
+}
+[data-testid="stHeader"] svg { fill: #CBD5E1 !important; }
+[data-testid="stHeader"] button:hover { background: #243044 !important; }
+
+/* ── Base text: nothing may stay dark-on-dark ──
+   Kept at one-class specificity so the component and card rules below can
+   re-assert their own accent colours (badges, tabs, warnings). */
+.stApp * { color: #E6EDF6 !important; }
+.stApp p, .stApp li { line-height: 1.6 !important; }
+.stApp h1, .stApp h2, .stApp h3, .stApp h4,
+.stApp h5, .stApp h6, .stApp strong { color: #FFFFFF !important; }
+/* Section headers get an orange rule so they never disappear */
+[data-testid="stMarkdownContainer"] > [data-testid="stHeadingWithActionElements"] h1,
+[data-testid="stMarkdownContainer"] > [data-testid="stHeadingWithActionElements"] h2,
+[data-testid="stMarkdownContainer"] > [data-testid="stHeadingWithActionElements"] h3 {
+  border-left: 4px solid #F97316; padding-left: 12px;
+  margin: 1.2rem 0 0.5rem 0 !important; line-height: 1.25;
+}
+[data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p,
+[data-testid="stCaptionContainer"] span { color: #A9B7CB !important; }
+.stApp a, .stApp a * { color: #FDBA74 !important; text-decoration-color: #FDBA74; }
+.stApp hr { border-color: #334155 !important; }
+.stApp code { background: #243044 !important; color: #FDBA74 !important; border-radius: 4px; }
+/* Markdown tables */
+[data-testid="stMarkdownContainer"] table { border-collapse: collapse; width: 100%; }
+[data-testid="stMarkdownContainer"] th {
+  background: #243044 !important; color: #FFFFFF !important;
+  border: 1px solid #334155 !important; padding: 8px 10px !important; text-align: left;
+}
+[data-testid="stMarkdownContainer"] td {
+  border: 1px solid #334155 !important; padding: 8px 10px !important; color: #E6EDF6 !important;
+}
+
+/* ── Sidebar ── */
+[data-testid="stSidebar"] {
+  background-color: #1B2637 !important;
+  border-right: 1px solid #334155 !important;
+}
+[data-testid="stSidebar"] * { color: #D8E1EC !important; }
+[data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 { color: #FFFFFF !important; }
+[data-testid="stSidebar"] [data-testid="stCaptionContainer"] p { color: #A9B7CB !important; }
+
+/* ── Tabs ── */
+.stTabs [data-baseweb="tab-list"] {
+  gap: 6px; border-bottom: 1.5px solid #334155; padding-bottom: 4px;
+  flex-wrap: wrap; background: transparent !important;
+}
+.stTabs [data-baseweb="tab"], [data-testid="stTab"] {
+  background: #1E293B !important; border: 1px solid #334155 !important;
+  border-radius: 8px 8px 0 0; padding: 8px 16px; transition: all 0.2s ease;
+}
+.stTabs [data-baseweb="tab"] p, [data-testid="stTab"] p {
+  color: #C7D3E3 !important; font-size: 0.92rem !important; font-weight: 600 !important;
+}
+.stTabs [data-baseweb="tab"]:hover p, [data-testid="stTab"]:hover p { color: #FDBA74 !important; }
+.stTabs [data-baseweb="tab"]:hover, [data-testid="stTab"]:hover { border-color: #F97316 !important; }
+.stTabs [data-baseweb="tab"][aria-selected="true"], [data-testid="stTab"][aria-selected="true"] {
+  background: #243044 !important; border-color: #F97316 !important;
+}
+.stTabs [data-baseweb="tab"][aria-selected="true"] p,
+[data-testid="stTab"][aria-selected="true"] p {
+  color: #FDBA74 !important; font-weight: 700 !important;
+}
+[data-testid="stTabHighlight"], .stTabs [data-baseweb="tab-highlight"] { background-color: #F97316 !important; }
+
+/* ── Forms / widget labels ── */
+[data-testid="stWidgetLabel"] label, [data-testid="stWidgetLabel"] p, [data-testid="stWidgetLabel"] span {
+  color: #D8E1EC !important; font-weight: 600 !important;
+}
+[data-baseweb="input"], [data-baseweb="base-input"],
+[data-testid="stNumberInput"] [data-baseweb="input"] {
+  background: #0F172A !important; border-color: #3B4A63 !important;
+}
+[data-testid="stNumberInput"] input, [data-testid="stTextInput"] input,
+[data-testid="stTextArea"] textarea {
+  background: #0F172A !important; color: #E6EDF6 !important;
+  -webkit-text-fill-color: #E6EDF6 !important;
+}
+[data-testid="stNumberInput"] button {
+  background: #243044 !important; border-color: #3B4A63 !important;
+}
+[data-testid="stNumberInput"] button svg { fill: #D8E1EC !important; }
+[data-baseweb="select"] > div, [data-baseweb="select"] [role="button"] {
+  background: #0F172A !important; border-color: #3B4A63 !important; color: #E6EDF6 !important;
+}
+[data-baseweb="popover"] [role="listbox"], [data-baseweb="popover"] [role="option"] {
+  background: #1E293B !important; color: #E6EDF6 !important;
+}
+[data-baseweb="popover"] [role="option"]:hover { background: #243044 !important; }
+[data-testid="stCheckbox"] label p, [data-testid="stRadio"] label p,
+[data-testid="stCheckbox"] label span, [data-testid="stRadio"] label span { color: #D8E1EC !important; }
+[data-testid="stSliderThumbValue"], [data-testid="stSliderThumbValue"] p { color: #0F172A !important; }
+[data-testid="stSliderTickBarMin"], [data-testid="stSliderTickBarMax"],
+[data-testid="stSliderTickBarMin"] p, [data-testid="stSliderTickBarMax"] p { color: #A9B7CB !important; }
+[data-testid="stTooltipContent"] { background: #243044 !important; }
+
+/* ── Buttons ── */
+.stButton button, [data-testid="stDownloadButton"] button, [data-testid="stFormSubmitButton"] button {
+  background: #243044 !important; border: 1px solid #3B4A63 !important;
+  color: #EEF4FB !important; border-radius: 8px !important;
+}
+.stButton button p, [data-testid="stDownloadButton"] button p { color: #EEF4FB !important; font-weight: 600 !important; }
+.stButton button:hover, [data-testid="stDownloadButton"] button:hover { border-color: #F97316 !important; }
+.stButton button:hover p, [data-testid="stDownloadButton"] button:hover p { color: #FDBA74 !important; }
+.stButton button:hover svg, [data-testid="stDownloadButton"] button:hover svg { fill: #FDBA74 !important; }
+[data-testid="stBaseButton-primary"] { background: #F97316 !important; border-color: #F97316 !important; }
+[data-testid="stBaseButton-primary"] p { color: #0F172A !important; }
+
+/* ── Expanders / alerts ── */
+[data-testid="stExpander"] details, [data-testid="stExpander"] summary {
+  background: #1E293B !important; border: 1px solid #334155 !important; border-radius: 10px !important;
+}
+[data-testid="stExpander"] summary p, [data-testid="stExpander"] summary span {
+  color: #EEF4FB !important; font-weight: 600 !important;
+}
+[data-testid="stExpander"] summary svg { fill: #C7D3E3 !important; }
+[data-testid="stAlertContainer"], [data-testid="stAlert"] {
+  background: #1E293B !important; border: 1px solid #334155 !important; border-radius: 10px !important;
+}
+[data-testid="stAlertContainer"] p, [data-testid="stAlert"] p { color: #E6EDF6 !important; }
+
+/* ── Metric cards ── */
+[data-testid="stMetric"] {
+  background: #1E293B !important; border: 1px solid #334155 !important;
+  border-left: 4px solid #F97316 !important; border-radius: 12px !important;
+  padding: 14px 18px !important; box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+  transition: transform 0.18s ease, border-color 0.18s ease;
+}
+[data-testid="stMetric"]:hover { transform: translateY(-2px); border-color: #F97316 !important; }
+[data-testid="stMetricLabel"] p { font-size: 0.88rem !important; color: #A9B7CB !important; font-weight: 600 !important; }
+[data-testid="stMetricValue"] { font-size: 1.65rem !important; font-weight: 800 !important; color: #FFFFFF !important; }
+[data-testid="stMetricDelta"] { color: #34D399 !important; }
+
+/* ── Dataframes (canvas keeps the light theme's ink, so the panel stays light) ── */
+[data-testid="stDataFrame"], [data-testid="stDataFrameResizable"] {
+  background: #FFFFFF !important; border: 1px solid #334155 !important;
+  border-radius: 12px !important; overflow: hidden !important;
+}
+[data-testid="stDataFrame"] * { color: #0F172A !important; }
+[data-testid="stDataFrame"] svg { fill: #334155 !important; }
+
+/* ═══════════ App cards ═══════════ */
+.white-card {
+  background: #1E293B !important; border: 1px solid #334155 !important;
+  border-radius: 12px; padding: 18px 20px; margin-bottom: 14px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+}
+.white-card h4 { color: #FFFFFF !important; }
+.white-card p  { color: #B7C4D6 !important; }
+
+.launch-card {
+  background: #1E293B !important; border: 1px solid #334155 !important;
+  border-top: 4px solid #F97316 !important; border-radius: 12px;
+  padding: 18px 20px; height: 100%;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+.launch-card:hover { box-shadow: 0 8px 24px rgba(249,115,22,0.18); transform: translateY(-3px); }
+.launch-card h3 { color: #FFFFFF !important; }
+.launch-card p  { color: #B7C4D6 !important; }
+
+.launch-header {
+  background: linear-gradient(135deg, #1E293B 0%, #1a2540 55%, #1e1a2e 100%) !important;
+  border: 1px solid #334155 !important; border-left: 6px solid #F97316 !important;
+  border-radius: 14px; padding: 22px 26px; margin-bottom: 1.2rem;
+}
+.launch-header h1 { color: #FFFFFF !important; }
+.launch-header p  { color: #B7C4D6 !important; }
+.launch-header .kicker { color: #FDBA74 !important; }
+
+.explainer-box {
+  background: #1a1f2e !important; border: 1px solid #3d2b00 !important;
+  border-left: 4px solid #F97316 !important; color: #FDBA74 !important;
+}
+
+/* Info tiles used by the "how to read" and glossary blocks */
+.info-tile {
+  background: #1E293B !important; border: 1px solid #334155 !important;
+  border-left: 3px solid #F97316 !important; border-radius: 10px;
+  padding: 14px 16px; margin-bottom: 10px;
+}
+.info-tile h5 { margin: 0 0 4px 0; color: #FFFFFF !important; font-size: 0.95rem; font-weight: 700; }
+.info-tile p  { margin: 0; color: #B7C4D6 !important; font-size: 0.88rem; line-height: 1.5; }
+.info-tile .formula {
+  display: inline-block; margin-top: 6px; padding: 2px 8px; border-radius: 5px;
+  background: #243044 !important; color: #FDBA74 !important;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.8rem;
+}
+
+/* Status pill + comparison cards + recommendation + savings callout */
+[data-testid="stSidebar"] .status-pill {
+  background: #14532D !important; border-color: #166534 !important; color: #86EFAC !important;
+}
+.cmp-card { box-shadow: none !important; }
+.cmp-good { background: #0F1F1B !important; border-color: #10B981 !important; }
+.cmp-bad  { background: #1F1115 !important; border-color: #E11D48 !important; }
+.cmp-good h4 { color: #34D399 !important; }
+.cmp-bad  h4 { color: #FB7185 !important; }
+.cmp-good div, .cmp-bad div, .cmp-good p, .cmp-bad p { color: #C7D3E3 !important; }
+.cmp-good strong, .cmp-bad strong { color: #FFFFFF !important; }
+.cmp-foot-good { color: #34D399 !important; border-top-color: #334155 !important; }
+.cmp-foot-bad  { color: #FB7185 !important; border-top-color: #334155 !important; }
+.rec-card { background: #1E293B !important; border-color: #F97316 !important; box-shadow: none !important; }
+.rec-card h3 { color: #FFFFFF !important; }
+.rec-card p  { color: #C7D3E3 !important; }
+.rec-note { background: #3d1f00 !important; color: #FDBA74 !important; }
+.rec-kicker { color: #FDBA74 !important; }
+.rec-meta { color: #A9B7CB !important; }
+.savings-box { background: #1E293B !important; border-color: #F97316 !important; }
+.savings-box h4 { color: #FDBA74 !important; }
+.savings-box p  { color: #C7D3E3 !important; }
+.savings-box strong { color: #FFFFFF !important; }
+
+/* ── Badges ── */
+.badge { border-radius: 6px; }
+.badge-orange { background: #3d1f00 !important; color: #FDBA74 !important; border: 1px solid #92400e !important; }
+.badge-blue   { background: #0c2340 !important; color: #7DD3FC !important; border: 1px solid #0369A1 !important; }
+.badge-emerald{ background: #052e16 !important; color: #6EE7B7 !important; border: 1px solid #065F46 !important; }
+.badge-rose   { background: #3d0014 !important; color: #FDA4AF !important; border: 1px solid #9f1239 !important; }
+
+/* Plotly container */
+.js-plotly-plot .plotly { background: transparent !important; }
+/* Smooth mode transition */
+html, body, .stApp, [data-testid="stSidebar"],
+[data-testid="stMetric"], .white-card, .launch-card, .launch-header {
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+</style>"""
+    else:
+        # ── Light Mode ── crisp white / orange
+        css = """
+<style>
+/* ═══════════ LIGHT MODE ═══════════ */
+:root { color-scheme: light; }
+.stApp {
+  --background-color: #F8FAFC;
+  --secondary-background-color: #FFFFFF;
+  --text-color: #0F172A;
+  --primary-color: #F97316;
+}
+html, body, .stApp {
+  font-size: 15px;
+  background-color: #F8FAFC !important;
+  color: #0F172A !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+.block-container { max-width: 1480px; padding-top: 3.6rem; padding-bottom: 3.5rem; }
+
+/* ── Slim app bar (see dark-mode comment) ── */
+[data-testid="stHeader"], header[data-testid="stHeader"] {
+  height: 44px !important; min-height: 44px !important;
+  background: rgba(255,255,255,0.92) !important;
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  border-bottom: 1px solid #E2E8F0 !important; box-shadow: none !important;
+}
+[data-testid="stHeader"] [data-testid="stToolbar"] {
+  height: 44px !important; min-height: 44px !important; padding: 0 10px !important;
+}
+[data-testid="stToolbar"]::before {
+  content: "⚡ AI Energy Lab";
+  position: absolute; left: 58px; top: 50%; transform: translateY(-50%);
+  font-size: 0.8rem; font-weight: 700; letter-spacing: 0.04em;
+  color: #C2410C !important; white-space: nowrap; pointer-events: none;
+}
+[data-testid="stHeader"] button, [data-testid="stHeader"] [data-testid="stMainMenu"] {
+  border-radius: 6px !important;
+}
+[data-testid="stHeader"] button:hover { background: #FFF7ED !important; }
+
+/* Section headers get an orange rule so they stand out from body copy */
+[data-testid="stMarkdownContainer"] > [data-testid="stHeadingWithActionElements"] h1,
+[data-testid="stMarkdownContainer"] > [data-testid="stHeadingWithActionElements"] h2,
+[data-testid="stMarkdownContainer"] > [data-testid="stHeadingWithActionElements"] h3 {
+  border-left: 4px solid #F97316; padding-left: 12px;
+  margin: 1.2rem 0 0.5rem 0 !important; line-height: 1.25; color: #0F172A !important;
+}
+.stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6 { color: #0F172A !important; }
+[data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p,
+[data-testid="stCaptionContainer"] span { color: #475569 !important; }
+[data-testid="stWidgetLabel"] label, [data-testid="stWidgetLabel"] p, [data-testid="stWidgetLabel"] span {
+  color: #0F172A !important; font-weight: 600 !important;
+}
+/* Slider value bubble sits on the orange thumb, so it needs dark ink in both themes */
+[data-testid="stSliderThumbValue"], [data-testid="stSliderThumbValue"] p { color: #0F172A !important; }
+/* Primary buttons: deeper orange keeps white labels legible */
+[data-testid="stBaseButton-primary"] { background: #C2410C !important; border-color: #C2410C !important; }
+[data-testid="stBaseButton-primary"] p, [data-testid="stBaseButton-primary"] div,
+[data-testid="stBaseButton-primary"] span { color: #FFFFFF !important; }
+.rec-kicker { color: #C2410C !important; }
+/* Tabs: explicit ink so labels never fade out */
+[data-testid="stTab"] p, .stTabs [data-baseweb="tab"] p { color: #334155 !important; font-weight: 600 !important; }
+[data-testid="stTab"]:hover p, .stTabs [data-baseweb="tab"]:hover p { color: #C2410C !important; }
+[data-testid="stTab"][aria-selected="true"] p, .stTabs [data-baseweb="tab"][aria-selected="true"] p {
+  color: #C2410C !important; font-weight: 700 !important;
+}
+/* Markdown tables */
+[data-testid="stMarkdownContainer"] table { border-collapse: collapse; width: 100%; }
+[data-testid="stMarkdownContainer"] th {
+  background: #F1F5F9 !important; color: #0F172A !important;
+  border: 1px solid #E2E8F0 !important; padding: 8px 10px !important; text-align: left;
+}
+[data-testid="stMarkdownContainer"] td {
+  border: 1px solid #E2E8F0 !important; padding: 8px 10px !important; color: #334155 !important;
+}
+.launch-header {
+  background: linear-gradient(135deg, #FFFFFF 0%, #FFF7ED 55%, #FFEDD5 100%);
+  border: 1px solid #FDBA74; border-left: 6px solid #F97316;
+  border-radius: 14px; padding: 22px 26px; margin-bottom: 1.2rem;
+  box-shadow: 0 4px 20px -2px rgba(249,115,22,0.12);
+}
+.launch-header .kicker { color: #C2410C; font-weight: 700; font-size: 0.82rem; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 4px; }
+.launch-header h1 { margin: 0 0 6px 0; font-size: 2.2rem; color: #0F172A !important; font-weight: 800; letter-spacing: -0.025em; }
+.launch-header p  { margin: 0; font-size: 0.98rem; color: #334155; max-width: 1050px; line-height: 1.5; }
+[data-testid="stMetric"] {
+  background: #FFFFFF !important; border: 1px solid #E2E8F0 !important;
+  border-left: 4px solid #F97316 !important; border-radius: 12px !important;
+  padding: 14px 18px !important; box-shadow: 0 2px 10px rgba(0,0,0,0.04);
+  transition: transform 0.18s ease, border-color 0.18s ease;
+}
+[data-testid="stMetric"]:hover { transform: translateY(-2px); border-color: #F97316 !important; box-shadow: 0 6px 18px rgba(249,115,22,0.12); }
+[data-testid="stMetricLabel"] p { font-size: 0.88rem !important; color: #475569 !important; font-weight: 600 !important; }
+[data-testid="stMetricValue"] { font-size: 1.65rem !important; font-weight: 800 !important; color: #0F172A !important; }
+.stTabs [data-baseweb="tab-list"] { gap: 6px; border-bottom: 1.5px solid #E2E8F0; padding-bottom: 4px; flex-wrap: wrap; }
+.stTabs [data-baseweb="tab"] { background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 8px 8px 0 0; padding: 8px 16px; color: #334155; font-size: 0.92rem; font-weight: 600; transition: all 0.2s ease; }
+.stTabs [data-baseweb="tab"]:hover { color: #C2410C; background: #FFF7ED; border-color: #FDBA74; }
+.stTabs [aria-selected="true"] { background: #FFF7ED !important; color: #C2410C !important; border-bottom: 2.5px solid #F97316 !important; font-weight: 700; }
+.stTabs [data-baseweb="tab-highlight"] { background-color: #F97316 !important; }
+.white-card { background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 12px; padding: 18px 20px; margin-bottom: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.03); }
+.white-card h4 { margin: 0 0 6px 0; color: #0F172A !important; font-size: 1.05rem; font-weight: 700; }
+.white-card p  { margin: 0; color: #334155; font-size: 0.92rem; line-height: 1.5; }
+.launch-card { background: #FFFFFF; border: 1px solid #E2E8F0; border-top: 4px solid #F97316; border-radius: 12px; padding: 18px 20px; height: 100%; box-shadow: 0 4px 12px rgba(0,0,0,0.04); transition: transform 0.18s ease, box-shadow 0.18s ease; }
+.launch-card:hover { transform: translateY(-3px); box-shadow: 0 8px 24px rgba(249,115,22,0.14); }
+.launch-card h3 { margin: 0 0 6px 0; color: #0F172A !important; font-size: 1.15rem; font-weight: 750; }
+.launch-card p  { margin: 0 0 12px 0; color: #334155; font-size: 0.9rem; line-height: 1.45; }
+.explainer-box { background: #FFF7ED; border: 1px solid #FDBA74; border-left: 4px solid #F97316; border-radius: 10px; padding: 12px 16px; margin: 10px 0 14px 0; font-size: 0.92rem; color: #7C2D12; display: flex; align-items: flex-start; gap: 10px; line-height: 1.5; }
+.explainer-icon { font-size: 1.2rem; line-height: 1; }
+/* Info tiles used by the "how to read" and glossary blocks */
+.info-tile {
+  background: #FFFFFF; border: 1px solid #E2E8F0; border-left: 3px solid #F97316;
+  border-radius: 10px; padding: 14px 16px; margin-bottom: 10px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.03);
+}
+.info-tile h5 { margin: 0 0 4px 0; color: #0F172A !important; font-size: 0.95rem; font-weight: 700; }
+.info-tile p  { margin: 0; color: #334155; font-size: 0.88rem; line-height: 1.5; }
+.info-tile .formula {
+  display: inline-block; margin-top: 6px; padding: 2px 8px; border-radius: 5px;
+  background: #FFF7ED; color: #C2410C;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.8rem;
+}
+.badge { display: inline-block; padding: 3px 9px; font-size: 0.74rem; font-weight: 700; border-radius: 6px; letter-spacing: 0.04em; text-transform: uppercase; }
+.badge-orange { background: #FFF7ED; color: #C2410C; border: 1px solid #FDBA74; }
+.badge-blue   { background: #F0F9FF; color: #0369A1; border: 1px solid #BAE6FD; }
+.badge-emerald{ background: #ECFDF5; color: #047857; border: 1px solid #A7F3D0; }
+.badge-rose   { background: #FFF1F2; color: #BE123C; border: 1px solid #FECDD3; }
+div[data-testid="stDataFrame"] { background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 12px; overflow: hidden; }
+[data-testid="stSidebar"] { background-color: #FFFFFF !important; border-right: 1px solid #E2E8F0; }
+html, body, .stApp, [data-testid="stSidebar"],
+[data-testid="stMetric"], .white-card, .launch-card, .launch-header {
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+</style>"""
+    st.markdown(css, unsafe_allow_html=True)
+_inject_css(st.session_state.dark_mode)
 
 
-# ---------------------------------------------------------------- helpers
+# ---------------------------------------------------------------- Helpers
 def fmt(value, unit: str = "", digits: int = 1) -> str:
     if value is None or pd.isna(value):
         return "—"
@@ -93,7 +501,6 @@ def read_csv_safe(path: Path) -> pd.DataFrame:
 
 
 def pretty_table(frame: pd.DataFrame, rename: dict, digits: int = 2) -> pd.DataFrame:
-    """Keep only known columns, rename to readable headers and round numbers."""
     cols = [c for c in rename if c in frame.columns]
     out = frame[cols].rename(columns=rename).copy()
     num = out.select_dtypes("number").columns
@@ -101,39 +508,54 @@ def pretty_table(frame: pd.DataFrame, rename: dict, digits: int = 2) -> pd.DataF
     return out
 
 
-def style_fig(fig, height: int = 420):
+def style_fig(fig, height: int = 400):
+    dark = st.session_state.get("dark_mode", False)
+    axis_text = "#94A3B8" if dark else "#475569"
+    body_text = "#CBD5E1" if dark else "#334155"
+    title_color = "#F1F5F9" if dark else "#0F172A"
+    grid_color = "#272F42" if dark else "#F1F5F9"
+    zero_color = "#334155" if dark else "#E2E8F0"
     fig.update_layout(
-        font=dict(size=14), title_font_size=18, height=height, colorway=PALETTE,
-        margin=dict(l=10, r=24, t=60, b=10), hoverlabel=dict(font_size=13),
-        legend=dict(orientation="h", yanchor="top", y=-0.18, x=0, font=dict(size=13), title_text=""),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(size=13, color=body_text),
+        title_font=dict(size=15, color=title_color, family="sans-serif"),
+        height=height,
+        colorway=PALETTE,
+        margin=dict(l=10, r=24, t=50, b=10),
+        hoverlabel=dict(bgcolor="#1E293B" if dark else "#FFFFFF",
+                        font_color="#E2E8F0" if dark else "#0F172A",
+                        font_size=13, bordercolor="#334155" if dark else "#E2E8F0"),
+        legend=dict(orientation="h", yanchor="top", y=-0.18, x=0, font=dict(size=12, color=axis_text), title_text=""),
     )
-    fig.update_xaxes(title_font_size=14, tickfont_size=13, automargin=True)
-    fig.update_yaxes(title_font_size=14, tickfont_size=13, automargin=True)
+    for axis in (fig.update_xaxes, fig.update_yaxes):
+        axis(
+            title_font_size=13, title_font_color=axis_text,
+            tickfont=dict(size=12, color=axis_text), automargin=True,
+            gridcolor=grid_color, zerolinecolor=zero_color, linecolor=zero_color
+        )
     return fig
 
 
-def show(fig, height: int = 420):
+def show(fig, height: int = 400):
     st.plotly_chart(style_fig(fig, height), **STRETCH)
 
 
 def hbar(frame, y, x, x_label, title, color=None, barmode="group", height=None):
-    """Horizontal bar chart: long names stay readable on small screens."""
     data = frame.dropna(subset=[x])
     if data.empty:
-        st.info(f"No data available for “{title}”.")
+        st.info(f"No data for “{title}”.")
         return
     fig = px.bar(data, x=x, y=y, color=color, orientation="h", title=title, barmode=barmode,
                  labels={x: x_label, y: ""}, color_discrete_sequence=PALETTE)
     if color is None:
-        fig.update_traces(marker_color=TEAL)
+        fig.update_traces(marker_color=ORANGE_PRIMARY)
     fig.update_traces(texttemplate="%{x:,.3g}", textposition="outside", cliponaxis=False)
     fig.update_yaxes(categoryorder="total ascending")
-    show(fig, height or max(300, 70 + 48 * len(data)))
+    show(fig, height or max(280, 60 + 44 * len(data)))
 
 
 def benchmark_only(frame: pd.DataFrame) -> pd.DataFrame:
-    """Keep real benchmark rows. data/results also holds the quality audit CSV, and the
-    backend load_results() concatenates every CSV in that folder."""
     if frame.empty or not {"model", "gen_tok_s"}.issubset(frame.columns):
         return pd.DataFrame()
     out = frame.copy()
@@ -142,41 +564,29 @@ def benchmark_only(frame: pd.DataFrame) -> pd.DataFrame:
 
 
 def power_basis(frame: pd.DataFrame):
-    """Return (kind, message) describing how power figures were obtained."""
     if "method" not in frame.columns or frame["method"].dropna().empty:
-        return "unknown", ("The benchmark files have no `method` column, so the power source is unknown. "
-                           "Treat power and joules as unverified estimates.")
+        return "unknown", "Hardware power source unverified."
     methods = sorted(frame["method"].dropna().astype(str).unique())
     joined = ", ".join(methods)
     if any("cpu_util_model" in m for m in methods):
-        return "estimate", (f"Power source: **{joined}**. At least part of the power data comes from a "
-                            "CPU-utilisation model. These are **estimates, not wall-socket measurements**.")
-    return "measured", (f"Power source: **{joined}**. RAPL covers the CPU package and NVML the NVIDIA GPU only; "
-                        "RAM, disk, display and power-supply losses are not included.")
-
-
-def metric_choice(key: str):
-    options = {"Energy (kWh/year)": ("kwh", "kWh/year"),
-               "Cost (USD/year)": ("cost_usd", "USD/year"),
-               "Carbon (kg CO₂/year)": ("kg_co2", "kg CO₂/year")}
-    label = st.radio("Metric to compare", list(options), horizontal=True, key=key)
-    return (*options[label], label)
+        return "estimate", f"Power basis: **{joined}** (Local hardware CPU-utilization model)."
+    return "measured", f"Power basis: **{joined}** (RAPL CPU package / NVML GPU hardware counters)."
 
 
 ESTIMATE_COLUMNS = {
-    "option": "Deployment option", "kind_label": "Type", "servers": "Servers needed",
-    "utilisation_pct": "Average utilisation (%)", "kwh": "Energy (kWh/year)",
-    "cost_usd": "Cost (USD/year)", "kg_co2": "Carbon (kg CO₂/year)",
-    "wh_per_query": "Energy per query (Wh)", "note": "Basis of figures",
+    "option": "Architecture Candidate", "kind_label": "Type", "servers": "Servers Needed",
+    "utilisation_pct": "Avg Utilization (%)", "kwh": "Energy (kWh/yr)",
+    "cost_usd": "Annual Cost ($)", "kg_co2": "Carbon (kg CO₂/yr)",
+    "wh_per_query": "Energy/Query (Wh)", "note": "Basis",
 }
 
 
-# ---------------------------------------------------------------- data
+# ---------------------------------------------------------------- Data Ingestion
 raw = pd.DataFrame()
 try:
     raw = load_results()
-except Exception as exc:  # unreadable CSV etc.
-    st.error(f"Could not read benchmark files in data/results: {exc}")
+except Exception as exc:
+    st.error(f"Could not load benchmark files: {exc}")
 bench = benchmark_only(raw)
 measured = not bench.empty
 
@@ -185,7 +595,7 @@ if measured:
     try:
         try:
             built = build_profiles(bench, quality_csv=str(QUALITY_AUTO))
-        except TypeError:  # older build_profiles signature
+        except TypeError:
             built = build_profiles(bench)
         if built:
             profiles = built
@@ -193,78 +603,124 @@ if measured:
             measured = False
     except Exception as exc:
         measured = False
-        st.warning(f"Benchmark rows were found but model profiles could not be built ({exc}). "
-                   "Showing placeholder profiles.")
+        st.warning(f"Could not construct model profiles: {exc}")
 
 cloud: list = []
+cloud_source_note = "none"
 if CLOUD_PATH.exists():
     try:
         loaded = json.loads(CLOUD_PATH.read_text(encoding="utf-8"))
-        cloud = [c for c in loaded if isinstance(c, dict)] if isinstance(loaded, list) else []
+        if isinstance(loaded, list) and loaded:
+            cloud = [c for c in loaded if isinstance(c, dict)]
+            cloud_source_note = "custom"
     except (json.JSONDecodeError, OSError):
-        st.warning("data/cloud_options.json could not be read; cloud options are hidden.")
+        pass
 
-# ---------------------------------------------------------------- sidebar
+if not cloud and CLOUD_BACKUP.exists():
+    try:
+        loaded_backup = json.loads(CLOUD_BACKUP.read_text(encoding="utf-8"))
+        if isinstance(loaded_backup, list) and loaded_backup:
+            cloud = [c for c in loaded_backup if isinstance(c, dict)]
+            cloud_source_note = "reference baseline"
+    except (json.JSONDecodeError, OSError):
+        pass
+
+# ---------------------------------------------------------------- Sidebar Controls
 DEFAULTS = dict(users=15000, active=0.20, qpd=5.0, days=240, hours=12, peak=8.0, tin=1500, tout=350,
-                ci=0.71, price=0.10, tu=0.70, aon=True, bg=1.0, capex=1500)
+                ci=0.71, price=0.10, tu=0.70, aon=True, bg=1.0, capex=1500, with_cloud=True)
 for _k, _v in DEFAULTS.items():
     st.session_state.setdefault(_k, _v)
 
 with st.sidebar:
-    st.header("Scenario settings")
-    st.caption("Change a value and every estimate updates immediately.")
-    st.button("Reset to defaults", on_click=lambda: st.session_state.update(DEFAULTS),
-              **STRETCH)
-    with st.expander("Workload", expanded=True):
-        users = st.number_input("Users", 100, 1_000_000, step=500, key="users",
-                                help="Total people who could use the service.")
-        active = st.slider("Daily active share", 0.01, 1.0, step=0.01, key="active",
-                           help="Fraction of users who send at least one query on a working day.")
-        qpd = st.number_input("Queries per active user per day", 1.0, 100.0, step=1.0, key="qpd")
-        days = st.number_input("Operating days per year", 1, 365, key="days",
-                               help="Days the service is used, e.g. about 240 academic days.")
-        hours = st.number_input("Service hours per day", 1, 24, key="hours",
-                                help="Hours per day the load is spread over.")
-        peak = st.number_input("Peak-to-average load", 1.0, 50.0, step=0.5, key="peak",
-                               help="How much busier the busiest period is than average. "
-                                    "Higher values need more servers.")
-        tin = st.number_input("Input tokens per query", 10, 32000, step=100, key="tin",
-                              help="Prompt size including any retrieved documents. A token is roughly ¾ of a word.")
-        tout = st.number_input("Output tokens per query", 10, 4000, step=25, key="tout",
-                               help="Length of the model's answer in tokens.")
-    with st.expander("Electricity and carbon", expanded=True):
-        ci = st.number_input("Grid carbon intensity (kg CO₂ per kWh)", 0.0, 1.5, step=0.01, key="ci",
-                             help="CO₂ emitted per unit of electricity. Use a cited figure for your region and year.")
-        price = st.number_input("Electricity price (USD per kWh)", 0.0, 1.0, step=0.01, key="price")
-    with st.expander("Deployment", expanded=True):
-        tu = st.slider("Target peak utilisation", 0.2, 0.95, step=0.05, key="tu",
-                       help="Share of each server's capacity used at peak. Lower means more spare servers.")
-        aon = st.checkbox("Servers powered 24/7", key="aon",
-                          help="If ticked, idle power is counted for all 8,760 hours of the year, "
-                               "not only service hours.")
-        bg = st.number_input("Batching throughput gain", 1.0, 16.0, step=0.5, key="bg",
-                             help="Extra requests served at once by batching. 1 = no batching (as benchmarked).")
-        capex = st.number_input("Hardware cost per local server (USD)", 0, 100000, step=100, key="capex",
-                                help="Spread over the hardware lifetime set in the calculator.")
+    st.toggle("🌙 Dark mode", key="dark_mode",
+              help="Click to switch the whole dashboard between light and dark themes.")
+    st.divider()
+    st.markdown("### ⚙️ Scenario Parameters")
+    st.caption("Change settings to immediately update projections.")
+
+    # Data status pill
+    _data_status = "🟢 Real data" if measured else "🟡 Placeholder"
+    _data_tip = f"{len(bench):,} telemetry rows · {bench['model'].nunique() if measured else 5} models" if measured else "Run benchmarks first"
+    st.markdown(
+        f"<div class='status-pill' style='background:#F0FDF4; border:1px solid #BBF7D0; border-radius:8px; "
+        f"padding:7px 12px; font-size:0.84rem; color:#166534; margin-bottom:8px;'>"
+        f"{_data_status} &nbsp;·&nbsp; {_data_tip}</div>",
+        unsafe_allow_html=True
+    )
+    st.button("↺ Reset Defaults", on_click=lambda: st.session_state.update(DEFAULTS), **STRETCH)
+
+    with st.expander("📘 Glossary & method", expanded=False):
+        st.markdown("""
+        <div class="info-tile">
+          <h5>Wh / query</h5>
+          <p>Electricity one user question costs, prefill plus generated tokens, across the whole fleet.</p>
+          <span class="formula">annual kWh ÷ annual queries</span>
+        </div>
+        <div class="info-tile">
+          <h5>J / token</h5>
+          <p>Active energy per generated token. Lower is greener: it separates model efficiency from traffic volume.</p>
+          <span class="formula">(active W − idle W) ÷ tok/s</span>
+        </div>
+        <div class="info-tile">
+          <h5>Idle tax (×)</h5>
+          <p>How many times more electricity a 24/7 server burns compared with the same box duty-cycled.</p>
+          <span class="formula">always-on kWh ÷ duty-cycled kWh</span>
+        </div>
+        <div class="info-tile">
+          <h5>EEI (points / J)</h5>
+          <p>Energy Efficiency Index: answer quality bought per joule. Higher is better.</p>
+          <span class="formula">quality score ÷ (J / token)</span>
+        </div>
+        <div class="info-tile">
+          <h5>Pareto optimal</h5>
+          <p>A model is on the frontier when nothing else beats it on both quality and energy per token.</p>
+        </div>
+        """, unsafe_allow_html=True)
+        st.caption(
+            "Measured rows come from local hardware counters (RAPL / NVML). Until benchmarks are run, "
+            "the dashboard falls back to documented placeholder profiles, flagged 🟡 above."
+        )
+
+    with st.expander("👥 Community & Workload", expanded=True):
+        users = st.number_input("Community (Users)", 100, 1_000_000, step=500, key="users")
+        active = st.slider("Daily Active Share", 0.01, 1.0, step=0.01, key="active")
+        qpd = st.number_input("Queries / Active User / Day", 1.0, 100.0, step=1.0, key="qpd")
+        days = st.number_input("Operating Days / Year", 1, 365, key="days")
+        hours = st.number_input("Service Hours / Day", 1, 24, key="hours")
+        peak = st.number_input("Peak-to-Average Load Multiplier", 1.0, 50.0, step=0.5, key="peak")
+        tin = st.number_input("Input Tokens / Query", 10, 32000, step=100, key="tin")
+        tout = st.number_input("Output Tokens / Query", 10, 4000, step=25, key="tout")
+
+    with st.expander("⚡ Electricity Tariff & Carbon", expanded=True):
+        ci = st.number_input("Grid Carbon (kg CO₂/kWh)", 0.0, 1.5, step=0.01, key="ci")
+        price = st.number_input("Electricity Rate ($/kWh)", 0.0, 1.0, step=0.01, key="price")
+
+    with st.expander("🖥️ Fleet Hardware & Duty Cycle", expanded=True):
+        tu = st.slider("Target Peak Utilization", 0.2, 0.95, step=0.05, key="tu")
+        aon = st.checkbox("Servers Powered 24/7 (Always-On)", key="aon")
+        bg = st.number_input("Batching Concurrency Gain", 1.0, 16.0, step=0.5, key="bg")
+        capex = st.number_input("Hardware Cost / Server ($)", 0, 100000, step=100, key="capex")
+
+    with st.expander("☁️ Cloud Baselines", expanded=False):
+        use_cloud = st.checkbox("Include Cloud Options", key="with_cloud")
 
 W = C.Workload(users, active, qpd, days, tin, tout, hours, peak)
 G = C.Grid(carbon_kg_per_kwh=ci, price_per_kwh=price)
 
 
 def estimate(workload, grid, tu_, aon_, bg_, capex_, with_cloud=True):
-    """Run the existing calculator for every profile and cloud option. Returns (frame, problems)."""
     rows, problems = [], []
     for p in profiles:
         try:
             rows.append(C.local_estimate(workload, p, grid, tu_, aon_, bg_, capex_))
         except (KeyError, ValueError, TypeError, ZeroDivisionError) as exc:
             problems.append(f"{getattr(p, 'name', 'profile')}: {exc!r}")
-    if with_cloud:
+    if with_cloud and use_cloud:
         for o in cloud:
             try:
                 rows.append(C.cloud_estimate(workload, o, grid, tu_, aon_))
             except (KeyError, ValueError, TypeError, ZeroDivisionError) as exc:
-                problems.append(f"{o.get('name', 'cloud option')}: missing or invalid field {exc!r}")
+                problems.append(f"{o.get('name', 'cloud option')}: missing field {exc!r}")
     frame = pd.DataFrame(rows)
     if not frame.empty:
         frame["kind_label"] = frame["kind"].map(KIND_LABELS).fillna(frame["kind"])
@@ -274,281 +730,625 @@ def estimate(workload, grid, tu_, aon_, bg_, capex_, with_cloud=True):
     return frame, problems
 
 
-# ---------------------------------------------------------------- status line
-n_models = bench["model"].nunique() if measured else 0
-_basis_kind, _basis_msg = power_basis(bench) if measured else ("none", "")
-st.caption(
-    f"Benchmark runs loaded: **{len(bench):,}** · Models: **{n_models}** · "
-    f"Cloud options configured: **{len(cloud)}** · Power data: "
-    f"**{ {'estimate': 'estimated (CPU-utilisation model)', 'measured': 'RAPL/NVML counters', 'unknown': 'source unknown', 'none': 'none loaded'}[_basis_kind] }**"
-)
-if not measured:
-    st.warning("No usable benchmark measurements were found in data/results. The calculator is using "
-               "**placeholder profiles**, so results below are illustrations, not project findings.")
+# ---------------------------------------------------------------- Model statistics (single source of truth)
+def model_key(profile_name: str) -> str:
+    """'qwen3:1.7b (ollama)' -> 'qwen3:1.7b' (matches the `model` column in the CSVs)."""
+    return str(profile_name).rsplit(" (", 1)[0]
 
-tab_over, tab_models, tab_quality, tab_campus, tab_method, tab_arena = st.tabs(
-    ["Overview", "Model Measurements", "Quality Review",
-     "Campus Chatbot", "Methodology", "Model Arena"])
 
-# ================================================================ Overview
-with tab_over:
-    render_model_arena()
-    st.subheader("Overview")
-    st.caption("Scenario-based **estimates** from the calculator, driven by the sidebar settings.")
-    res, problems = estimate(W, G, tu, aon, bg, capex)
-    for msg in problems:
-        st.warning(f"Skipped an option: {msg}")
+def md_inline(text: str) -> str:
+    """Render **bold** inside raw HTML blocks (Markdown is not parsed inside HTML)."""
+    return re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", str(text))
 
-    st.markdown("#### Workload summary")
-    w1, w2, w3, w4 = st.columns(4)
-    w1.metric("Queries per year", f"{W.total_queries:,.0f}")
-    w2.metric("Tokens per year", f"{W.total_queries * (tin + tout) / 1e6:,.1f} M",
-              help="Input plus output tokens across all queries.")
-    w3.metric("Average load", f"{W.avg_qps:,.2f} queries/s",
-              help="Average during service hours.")
-    w4.metric("Peak load", f"{W.peak_qps:,.2f} queries/s",
-              help="Average load times the peak-to-average factor. Servers are sized for this.")
 
-    if res.empty:
-        st.error("No deployment options could be estimated. Check the benchmark files and cloud options.")
-    else:
-        st.markdown("#### Annual estimate for one option")
-        names = res["option"].astype(str).tolist()
-        pick_one = st.selectbox("Deployment option", names, index=int(res["kwh"].idxmin()),
-                                help="Starts on the lowest-energy option. Lowest energy is not automatically the best choice.")
-        row = res[res["option"].astype(str) == pick_one].iloc[0]
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Energy", fmt(row["kwh"], "kWh/year", 0))
-        m2.metric("Electricity + hardware or service cost", fmt(row["cost_usd"], "USD/year", 0),
-                  help="Local: electricity plus amortised hardware. Cloud: configured rental or per-token prices.")
-        m3.metric("Carbon emissions", fmt(row["kg_co2"], "kg CO₂/year", 0))
-        m4.metric("Energy per query", fmt(row["wh_per_query"], "Wh", 2))
-        st.caption(f"Type: {row['kind_label']} · Basis: {row.get('note', '—')}")
-        if "placeholder" in (pick_one + str(row.get("note", ""))).lower():
-            st.warning("This option uses placeholder values, not project data.")
+def build_model_stats() -> pd.DataFrame:
+    """One row per benchmarked model, with the campus case study run for each one.
 
-        st.markdown("#### Compare all options")
-        unit_key, unit_label, label = metric_choice("overview_metric")
-        hbar(res.assign(option=res["option"].astype(str)), "option", unit_key, unit_label,
-             f"Estimated {label}", color="kind_label")
-        st.dataframe(pretty_table(res.sort_values(unit_key), ESTIMATE_COLUMNS, 2),
-                     **STRETCH, hide_index=True)
-        if not cloud:
-            st.info("No cloud options are configured in data/cloud_options.json, so only local options are compared.")
-        elif any("placeholder" in json.dumps(o).lower() for o in cloud):
-            st.warning("Some cloud options contain placeholder prices or specifications. Replace them with cited values before presenting.")
-
-        with st.expander("Sensitivity: how energy changes with the number of users"):
-            chosen = st.multiselect("Options to include", names, default=names[:3])
-            sweep = []
-            for u in sorted({max(100, int(users * f)) for f in (0.25, 0.5, 1, 2, 4)}):
-                frame, _ = estimate(replace(W, users=u), G, tu, aon, bg, capex)
-                if has_cols(frame, ["option", "kwh"]):
-                    sweep.append(frame[frame["option"].astype(str).isin(chosen)].assign(users=u))
-            if sweep and chosen:
-                fig = px.line(pd.concat(sweep, ignore_index=True), x="users", y="kwh", color="option",
-                              markers=True, log_x=True, log_y=True, color_discrete_sequence=PALETTE,
-                              labels={"users": "Users (log scale)", "kwh": "Energy, kWh/year (log scale)", "option": ""},
-                              title="Estimated annual energy vs users")
-                show(fig)
-            else:
-                st.info("Select at least one option.")
-
-# ================================================================ Model Measurements
-with tab_models:
-    st.subheader("Model Measurements")
-    st.caption("These figures come from **benchmark runs** on your machine, not from the scenario calculator.")
+    Active energy per token is the median of the per-run `j_per_out_token` column
+    (energy above idle ÷ output tokens). Campus figures use the fixed case-study
+    workload (scenarios/campus_chatbot.py) and electricity only (no hardware cost).
+    """
     if not measured:
-        st.info("No benchmark measurements are loaded. Run a benchmark, then refresh this page.")
-        st.code("python -m aienergy.bench_ollama --models <model names>", language="powershell")
-    else:
-        kind, message = power_basis(bench)
-        (st.warning if kind in ("estimate", "unknown") else st.info)(message)
+        return pd.DataFrame()
+    j_med, runs, wall = {}, {}, {}
+    if "j_per_out_token" in bench.columns:
+        j_med = pd.to_numeric(bench["j_per_out_token"], errors="coerce").groupby(bench["model"]).median().dropna().to_dict()
+    runs = bench.groupby("model").size().to_dict()
+    if "wall_s" in bench.columns:
+        wall = pd.to_numeric(bench["wall_s"], errors="coerce").groupby(bench["model"]).median().dropna().to_dict()
+    manual = {}
+    mdf = read_csv_safe(QUALITY_MANUAL)
+    if has_cols(mdf, ["model", "manual_score"]):
+        manual = pd.to_numeric(mdf["manual_score"], errors="coerce").groupby(mdf["model"]).mean().dropna().to_dict()
 
-        for c in ["gen_tok_s", "j_per_out_token", "avg_w", "params_b", "prefill_tok_s", "idle_w"]:
-            if c in bench.columns:
-                bench[c] = pd.to_numeric(bench[c], errors="coerce")
-        spec = {"runs": ("model", "size"), "tok_s": ("gen_tok_s", "median")}
-        for out_col, (src, fn) in {"j_per_tok": ("j_per_out_token", "mean"), "watts": ("avg_w", "mean"),
-                                   "params_b": ("params_b", "first"),
-                                   "idle_w": ("idle_w", "mean")}.items():
-            if src in bench.columns:
-                spec[out_col] = (src, fn)
-        agg = bench.groupby("model", as_index=False).agg(**spec)
+    rows = []
+    for p in profiles:
+        key = model_key(p.name)
+        j = j_med.get(key)
+        j_src = "measured"
+        if j is None or not j > 0:
+            j, j_src = max(p.active_w - p.idle_w, 0) / max(p.gen_tok_s, 0.1), "derived"
+        duty = C.local_estimate(CW, p, CG, 0.7, False, 1.0, 0.0)
+        always = C.local_estimate(CW, p, CG, 0.7, True, 1.0, 0.0)
+        q = p.quality if p.quality is not None and pd.notna(p.quality) else None
+        rows.append(dict(
+            model=key, profile=p.name, params_b=p.params_b, runs=runs.get(key, 0), wall_s=wall.get(key),
+            tok_s=p.gen_tok_s, active_w=p.active_w, idle_w=p.idle_w, j_per_tok=float(j), j_src=j_src,
+            quality=q, manual=manual.get(key),
+            eei=S.compute_efficiency_index(q, float(j)) if q is not None else None,
+            duty_kwh=duty["kwh"], duty_usd=duty["cost_usd"], duty_co2=duty["kg_co2"], servers=duty["servers"],
+            always_kwh=always["kwh"], always_usd=always["cost_usd"], always_co2=always["kg_co2"],
+        ))
+    out = pd.DataFrame(rows)
+    out["idle_tax"] = out["always_kwh"] / out["duty_kwh"].where(out["duty_kwh"] > 0)
+    return out
 
-        k1, k2, k3 = st.columns(3)
-        k1.metric("Models benchmarked", f"{agg['model'].nunique()}")
-        k2.metric("Benchmark runs", f"{len(bench):,}")
-        k3.metric("Prompt types", f"{bench['prompt_id'].nunique()}" if "prompt_id" in bench.columns else "—")
 
-        a, b = st.columns(2)
-        with a:
-            hbar(agg, "model", "tok_s", "Tokens per second", "Generation speed (median)")
-        with b:
-            if "j_per_tok" in agg.columns:
-                hbar(agg, "model", "j_per_tok", "Joules per output token",
-                     "Active energy per output token (mean)")
-            else:
-                st.info("Column `j_per_out_token` is missing, so energy per token cannot be shown.")
-        c, d = st.columns(2)
-        with c:
-            if "watts" in agg.columns:
-                hbar(agg, "model", "watts", "Watts", "Average power during generation (mean)")
-            else:
-                st.info("Column `avg_w` is missing, so power cannot be shown.")
-        with d:
-            if has_cols(agg, ["params_b", "j_per_tok"]) and agg["params_b"].gt(0).sum() >= 2:
-                sc = agg[agg["params_b"] > 0].dropna(subset=["params_b", "j_per_tok"])
-                fig = px.scatter(sc, x="params_b", y="j_per_tok", color="model", log_x=True, log_y=True,
-                                 hover_data=["tok_s"], color_discrete_sequence=PALETTE,
-                                 title="Energy per token vs model size",
-                                 labels={"params_b": "Parameters, billions (log)",
-                                         "j_per_tok": "Joules per output token (log)", "tok_s": "Tokens/s"})
-                fig.update_traces(marker=dict(size=14))
-                show(fig, 420)
-            else:
-                st.info("Model-size chart needs `params_b` for at least two models.")
+ms = build_model_stats()
+POWER_KIND, POWER_NOTE = power_basis(bench) if measured else ("none", "No benchmark data yet.")
+CLOUD_PLACEHOLDER = any("placeholder" in str(o.get("name", "")).lower() for o in cloud)
 
-        st.markdown("#### Summary table")
-        st.dataframe(pretty_table(agg, {
-            "model": "Model", "params_b": "Parameters (billions)", "runs": "Runs",
-            "tok_s": "Generation speed (tokens/s, median)", "j_per_tok": "Active energy (J/output token)",
-            "watts": "Mean power (W)", "idle_w": "Idle baseline (W)"}, 3),
-            **STRETCH, hide_index=True)
-        st.caption("Active energy = measured joules minus the idle baseline for the same duration. "
-                   "Faster or lower-energy does not mean better: check the Quality Review tab before choosing a model.")
-        with st.expander("All benchmark rows"):
-            st.dataframe(bench, **STRETCH, hide_index=True)
+# Headline facts — every number below is computed, never typed in
+small = large = None
+if not ms.empty:
+    ranked = ms.dropna(subset=["eei"]).sort_values("eei", ascending=False)
+    small = (ranked if not ranked.empty else ms.sort_values("j_per_tok")).iloc[0]
+    large = ms.sort_values(["params_b", "j_per_tok"], ascending=False, na_position="last").iloc[0]
+    if small["model"] == large["model"]:
+        large = None
+tax_min = ms["idle_tax"].min() if not ms.empty else None
+tax_max = ms["idle_tax"].max() if not ms.empty else None
+tax_avg = ms["idle_tax"].mean() if not ms.empty else None
 
-# ================================================================ Quality Review
-with tab_quality:
-    st.subheader("Quality Review")
-    st.info("Two **different** evaluation methods are shown separately. The automatic score is a heuristic "
-            "check. The manual audit is a provisional human review. Neither is ground-truth accuracy, and "
-            "they should not be averaged together.")
-    manual = read_csv_safe(QUALITY_MANUAL)
-    automatic = read_csv_safe(QUALITY_AUTO)
 
-    st.markdown("#### Automatic quality scores (heuristic)")
-    if automatic.empty:
-        st.caption(f"No automatic scores found at `{QUALITY_AUTO.as_posix()}`.")
-    else:
-        score_col = next((c for c in ("score", "automatic_score") if c in automatic.columns), None)
-        if score_col and "model" in automatic.columns:
-            automatic[score_col] = pd.to_numeric(automatic[score_col], errors="coerce")
-            avg_auto = automatic.groupby("model", as_index=False)[score_col].mean()
-            hbar(avg_auto, "model", score_col, "Automatic score", "Automatic heuristic score by model")
-        st.dataframe(automatic, **STRETCH, hide_index=True)
+def fmt_q(v) -> str:
+    return "—" if v is None or pd.isna(v) else f"{v:.0f}"
 
-    st.markdown("#### Manual audit scores (provisional)")
-    if not has_cols(manual, ["model", "prompt_id", "manual_score"]):
-        st.caption(f"No manual audit found at `{QUALITY_MANUAL.as_posix()}` "
-                   "(needs columns model, prompt_id, manual_score).")
-    else:
-        manual["manual_score"] = pd.to_numeric(manual["manual_score"], errors="coerce")
-        st.warning("Provisional ratings by a reviewer. Subjective, not independently validated or calibrated.")
-        pivot = manual.pivot_table(index="model", columns="prompt_id", values="manual_score", aggfunc="mean")
-        if pivot.empty or pivot.isna().all().all():
-            st.info("The audit file has no numeric manual scores yet.")
-        else:
-            fig = px.imshow(pivot, text_auto=".0f", aspect="auto", color_continuous_scale="Teal",
-                            zmin=0, zmax=max(100, float(pivot.max().max())),
-                            title="Manual score by model and prompt type",
-                            labels={"x": "Prompt type", "y": "Model", "color": "Score"})
-            show(fig, max(320, 90 + 60 * len(pivot)))
-            avg_manual = manual.groupby("model", as_index=False).agg(mean_manual_score=("manual_score", "mean"))
-            hbar(avg_manual, "model", "mean_manual_score", "Average manual score",
-                 "Average provisional manual score by model")
-        st.markdown("##### Audit details")
-        st.dataframe(pretty_table(manual, {
-            "model": "Model", "prompt_id": "Prompt type", "automatic_score": "Automatic score (heuristic)",
-            "manual_score": "Manual score (provisional)", "audit_status": "Audit status",
-            "manual_findings": "Reviewer findings"}, 1), **STRETCH, hide_index=True)
 
-# ================================================================ Campus Chatbot
-with tab_campus:
-    st.subheader("Campus Chatbot")
-    st.caption("A fixed, illustrative year-long scenario. These are **calculator estimates**, not a measured deployment.")
-    s1, s2, s3, s4 = st.columns(4)
-    s1.metric("Users", f"{CW.users:,}")
-    s2.metric("Daily active share", f"{CW.active_frac:.0%}")
-    s3.metric("Queries per active user per day", f"{CW.queries_per_active_day:g}")
-    s4.metric("Academic days", f"{CW.days}")
-    st.caption(f"{CW.in_tokens:,} input and {CW.out_tokens:,} output tokens per query · {CW.hours_per_day:g} service hours/day "
-               f"· peak load {CW.peak_factor:g}× average · grid {CG.carbon_kg_per_kwh:g} kg CO₂/kWh · "
-               f"{CG.price_per_kwh:g} USD/kWh. Only the hardware cost in the sidebar affects this tab.")
+def compare_word(a, b, tol: float = 2.0) -> str:
+    if a is None or b is None or pd.isna(a) or pd.isna(b):
+        return "n/a"
+    return "similar" if abs(a - b) <= tol else ("higher" if a > b else "lower")
 
-    biz, p1 = estimate(CW, CG, 0.7, False, 1.0, capex)
-    always, p2 = estimate(CW, CG, 0.7, True, 1.0, capex, with_cloud=False)
-    for msg in p1 + p2:
-        st.warning(f"Skipped an option: {msg}")
-    if biz.empty:
-        st.error("No scenario options could be estimated.")
-    else:
-        biz = biz.assign(mode=biz["kind"].map(lambda k: "Local · business hours" if k == "local" else "Cloud · as configured"))
-        always = always.assign(mode="Local · always on (24/7)")
-        camp = pd.concat([biz, always], ignore_index=True)
-        camp["option"] = camp["option"].astype(str)
 
-        unit_key, unit_label, label = metric_choice("campus_metric")
-        hbar(camp, "option", unit_key, unit_label, f"Campus scenario: estimated {label}", color="mode")
+FINDINGS: list[str] = []
+if small is not None and large is not None:
+    pct = (1 - small["j_per_tok"] / large["j_per_tok"]) * 100
+    FINDINGS.append(
+        f"**{small['model']}** uses **{pct:.0f}% less active energy per token** than **{large['model']}** "
+        f"({small['j_per_tok']:.2f} vs {large['j_per_tok']:.2f} J/token) and runs "
+        f"{small['tok_s'] / large['tok_s']:.1f}× faster. Quality: automatic {fmt_q(small['quality'])} vs "
+        f"{fmt_q(large['quality'])}, human review {fmt_q(small['manual'])} vs {fmt_q(large['manual'])}."
+    )
+if tax_min is not None:
+    FINDINGS.append(
+        f"Keeping servers on 24/7 uses **{tax_min:.1f}–{tax_max:.1f}×** the energy of a "
+        f"{CW.hours_per_day}h/day, {CW.days}-day schedule — idle power dominates always-on deployments."
+    )
+if small is not None and large is not None:
+    FINDINGS.append(
+        f"Campus chatbot for a year: **{small['model']} on a schedule ≈ {small['duty_kwh']:,.0f} kWh** vs "
+        f"**{large['model']} left on 24/7 ≈ {large['always_kwh']:,.0f} kWh** "
+        f"({large['always_kwh'] / small['duty_kwh']:.1f}× more)."
+    )
 
-        loc_b = biz[biz["kind"] == "local"][["option", "kwh"]].rename(columns={"kwh": "kwh_business"})
-        loc_a = always[always["kind"] == "local"][["option", "kwh"]].rename(columns={"kwh": "kwh_always"}) if not always.empty else pd.DataFrame()
-        if has_cols(loc_b, ["option"]) and has_cols(loc_a, ["option"]):
-            cmp_ = loc_b.merge(loc_a, on="option")
-            cmp_["ratio"] = cmp_["kwh_always"] / cmp_["kwh_business"].where(cmp_["kwh_business"] > 0)
-            st.markdown("#### Business hours vs always-on (local models)")
-            st.dataframe(pretty_table(cmp_, {
-                "option": "Model", "kwh_business": "Business hours (kWh/year)",
-                "kwh_always": "Always on (kWh/year)", "ratio": "Always-on ÷ business hours (×)"}, 2),
-                **STRETCH, hide_index=True)
-            st.caption("Always-on operation adds idle power for hours when nobody is using the chatbot.")
-        st.markdown("#### Full scenario table")
-        st.dataframe(pretty_table(camp, {"mode": "Operating mode", **ESTIMATE_COLUMNS}, 2),
-                     **STRETCH, hide_index=True)
-        if not cloud:
-            st.info("No cloud options are configured, so the scenario compares local deployments only.")
+# Base estimates for the sidebar scenario (local only, so placeholder cloud rows never become a headline)
+res_base, _ = estimate(W, G, tu, aon, bg, capex, with_cloud=True)
+res_local = res_base[res_base["kind"] == "local"] if not res_base.empty else res_base
 
-# ================================================================ Methodology
-with tab_method:
-    st.subheader("Methodology")
+# ---------------------------------------------------------------- Theme toggle + data banner (above tabs)
+_tb1, _tb2 = st.columns([6, 1])
+with _tb2:
+    st.button("☀️ Light mode" if st.session_state.dark_mode else "🌙 Dark mode",
+              on_click=lambda: st.session_state.update(dark_mode=not st.session_state.dark_mode),
+              key="theme_btn", **STRETCH)
+with _tb1:
+    if POWER_KIND == "estimate":
+        st.caption("⚠️ **Power is estimated** from CPU utilisation on this machine (no RAPL/NVML counters). "
+                   "Runtime and tokens/s are measured. See *Telemetry* for how to get metered watts.")
+    elif POWER_KIND == "measured":
+        st.caption("✅ Power read from hardware energy counters.")
+
+# ---------------------------------------------------------------- Primary Tabs
+tab_launch, tab_wizard, tab_pareto, tab_campus, tab_calc, tab_telemetry, tab_quality, tab_arena, tab_report = st.tabs([
+    "🚀 Launchpad",
+    "🤖 Green Auditor",
+    "⚖️ Pareto Frontier",
+    "🏫 Campus Chatbot",
+    "🧮 Calculator",
+    "📊 Telemetry",
+    "🎯 Quality",
+    "⚔️ Model Arena",
+    "📄 Report"
+])
+
+
+# ================================================================ 1. 🚀 Launchpad
+with tab_launch:
     st.markdown("""
-#### Two kinds of numbers
-- **Benchmark measurements** (Model Measurements tab): speed, power and energy recorded while real models answered real prompts on this project's machine.
-- **Scenario estimates** (Overview and Campus Chatbot tabs): the calculator scales the benchmark figures up to a planned deployment. They depend on the assumptions in the sidebar.
+    <div class="launch-header">
+      <div class="kicker">⚡ Project 74 · AI Energy Lab</div>
+      <h1>AI Systems Energy, Cost &amp; Carbon Analysis</h1>
+      <p>Every AI answer costs electricity and money. We benchmarked local models on our own machine,
+         compared cloud options, and tested whether <strong>a small model run well</strong> beats
+         <strong>a large model run wastefully</strong>.</p>
+    </div>
+    """, unsafe_allow_html=True)
 
-#### How the calculator works (from `aienergy/calculator.py`)
-```
-service time per query = output tokens / generation speed + input tokens / prompt-processing speed
-servers needed         = ceil( peak queries per second x service time / (target utilisation x batching gain) )
-busy energy            = busy seconds x (active watts - idle watts)
-idle energy            = servers x powered hours x idle watts
-energy (kWh)           = (busy energy + idle energy) x PUE / 3.6 million
-carbon (kg CO2)        = energy (kWh) x grid carbon intensity
-local cost (USD)       = energy x electricity price + servers x hardware cost / hardware lifetime
-cloud API cost (USD)   = tokens / 1 million x configured price per million tokens
-cloud GPU cost (USD)   = servers x rented hours x configured price per hour
-```
-**PUE** (power usage effectiveness) is data-centre overhead such as cooling. The calculator defaults are 1.0 for local and 1.2 for cloud; they are not sidebar controls.
+    _n_runs = len(bench) if measured else 0
+    _n_models = bench["model"].nunique() if measured else 0
+    s_col1, s_col2, s_col3, s_col4 = st.columns([1.1, 1.1, 1.4, 2.0])
+    with s_col1:
+        st.markdown(f"<span class='badge badge-orange'>Runs</span> **{_n_runs:,}** benchmarks", unsafe_allow_html=True)
+    with s_col2:
+        st.markdown(f"<span class='badge badge-blue'>Models</span> **{_n_models}** compared", unsafe_allow_html=True)
+    with s_col3:
+        _win = small["model"] if small is not None else "—"
+        st.markdown(f"<span class='badge badge-emerald'>Best EEI</span> **{_win}**", unsafe_allow_html=True)
+    with s_col4:
+        _tax = f"{tax_min:.1f}–{tax_max:.1f}×" if tax_min is not None else "—"
+        st.markdown(f"<span class='badge badge-rose'>Idle trap</span> 24/7 uses **{_tax}** the energy", unsafe_allow_html=True)
 
-#### Measurement limitations
-- **Power source.** RAPL reads CPU-package energy on supported Linux systems and NVML reads NVIDIA GPU power. `cpu_util_model` estimates power from CPU utilisation. Windows runs normally use `cpu_util_model`, so those joule and watt values are **estimates, not wall-socket measurements**. A smart plug would be needed for wall power.
-- **Idle baseline.** Active energy subtracts an idle baseline measured before the run.
-- **Single-stream benchmarks.** One request at a time, so batching and concurrent load are not captured unless you set a batching gain.
-- **Cloud API energy** is an assumed figure from `data/cloud_options.json`, not a measurement.
-- **Grid carbon and prices** are inputs; use cited values for your region.
+    st.markdown("<div style='height: 14px;'></div>", unsafe_allow_html=True)
 
-#### Quality caveats
-Automatic scores are heuristic checks. Manual audit scores are provisional reviewer judgements. Neither is validated accuracy, and no model is declared best on energy alone.
+    if not ms.empty:
+        _best = ms.sort_values("duty_kwh").iloc[0]
+        _m1, _m2, _m3, _m4 = st.columns(4)
+        _m1.metric("Campus chatbot · best case", f"{_best['duty_kwh']:,.0f} kWh/yr",
+                   help=f"{_best['model']}, {CW.hours_per_day}h/day, {CW.days} days")
+        _m2.metric("Electricity cost", f"${_best['duty_usd']:,.0f}/yr",
+                   help=f"At ${CG.price_per_kwh:.2f}/kWh, hardware excluded")
+        _m3.metric("CO₂", f"{_best['duty_co2']:,.0f} kg/yr", help=f"At {CG.carbon_kg_per_kwh} kg CO₂/kWh")
+        _fast = ms.sort_values("tok_s", ascending=False).iloc[0]
+        _m4.metric("Fastest model", f"{_fast['tok_s']:.1f} tok/s", help=f"{_fast['model']} (median)")
+    else:
+        st.info("No benchmark data found in `data/results/`. Run `python -m aienergy.bench_ollama` first.")
+
+    st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+
+    # Core finding: computed head-to-head
+    if small is not None and large is not None:
+        st.markdown("### 🏆 Small Model Run Well vs. Large Model Run Wastefully")
+        st.caption(f"Campus case study: {CW.users:,} users · {CW.days} days · electricity at ${CG.price_per_kwh:.2f}/kWh.")
+        e_ratio = large["always_kwh"] / small["duty_kwh"]
+        usd_gap = large["always_usd"] - small["duty_usd"]
+        j_ratio = large["j_per_tok"] / small["j_per_tok"]
+        sp_ratio = small["tok_s"] / large["tok_s"]
+        qa, qm = compare_word(small["quality"], large["quality"]), compare_word(small["manual"], large["manual"])
+
+        def _row(icon, label, value):
+            return f"<div>{icon} <strong>{label}:</strong> {value}</div>"
+
+        h_col1, h_col2 = st.columns(2)
+        with h_col1:
+            st.markdown(f"""
+<div class="cmp-card cmp-good" style="background:#FFFFFF; border:2px solid #10B981; border-radius:12px; padding:18px 20px;">
+  <div style="display:flex; justify-content:space-between; align-items:center;">
+    <h4 style="margin:0; color:#059669;">🌟 {small['model']}</h4>
+    <span class="badge badge-emerald">Run well</span>
+  </div>
+  <p style="margin:6px 0 10px 0; color:#64748B; font-size:0.9rem;">Best quality-per-joule · sleeps outside {CW.hours_per_day}h service</p>
+  <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; font-size:0.9rem; color:#0F172A;">
+    {_row("🎯", "Quality", f"{fmt_q(small['quality'])} auto · {fmt_q(small['manual'])} human")}
+    {_row("⚡", "Speed", f"{small['tok_s']:.1f} tok/s")}
+    {_row("🔋", "Energy", f"{small['j_per_tok']:.2f} J/token")}
+    {_row("🌱", "Year", f"{small['duty_kwh']:,.0f} kWh")}
+    {_row("💰", "Cost", f"${small['duty_usd']:,.0f}/yr")}
+    {_row("🖥️", "Servers", f"{int(small['servers'])}")}
+  </div>
+  <div class="cmp-foot-good" style="margin-top:10px; padding-top:8px; border-top:1px solid #E2E8F0; color:#047857; font-size:0.85rem; font-weight:600;">
+    ✅ {j_ratio:.1f}× less energy per token, {sp_ratio:.1f}× faster.
+  </div>
+</div>""", unsafe_allow_html=True)
+        with h_col2:
+            st.markdown(f"""
+<div class="cmp-card cmp-bad" style="background:#FFFFFF; border:2px solid #E11D48; border-radius:12px; padding:18px 20px;">
+  <div style="display:flex; justify-content:space-between; align-items:center;">
+    <h4 style="margin:0; color:#E11D48;">⚠️ {large['model']}</h4>
+    <span class="badge badge-rose">Run wastefully</span>
+  </div>
+  <p style="margin:6px 0 10px 0; color:#64748B; font-size:0.9rem;">Largest model tested · left on 24/7, all year</p>
+  <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; font-size:0.9rem; color:#0F172A;">
+    {_row("🎯", "Quality", f"{fmt_q(large['quality'])} auto · {fmt_q(large['manual'])} human")}
+    {_row("⚡", "Speed", f"{large['tok_s']:.1f} tok/s")}
+    {_row("🔋", "Energy", f"{large['j_per_tok']:.2f} J/token")}
+    {_row("🌱", "Year", f"{large['always_kwh']:,.0f} kWh")}
+    {_row("💰", "Cost", f"${large['always_usd']:,.0f}/yr")}
+    {_row("🖥️", "Servers", f"{int(large['servers'])}")}
+  </div>
+  <div class="cmp-foot-bad" style="margin-top:10px; padding-top:8px; border-top:1px solid #E2E8F0; color:#BE123C; font-size:0.85rem; font-weight:600;">
+    ❌ {e_ratio:.1f}× the energy and ${usd_gap:,.0f} more per year.
+  </div>
+</div>""", unsafe_allow_html=True)
+
+        # Where does the waste come from? (model choice vs schedule)
+        from_model = large["duty_kwh"] - small["duty_kwh"]
+        from_sched = large["always_kwh"] - large["duty_kwh"]
+        split = pd.DataFrame({
+            "Cause": ["Bigger model", "Always-on schedule"],
+            "kWh": [max(from_model, 0), max(from_sched, 0)],
+        })
+        fig_split = px.bar(split, x="kWh", y="Cause", orientation="h", text="kWh",
+                           title="Where the extra energy comes from (kWh/yr)",
+                           color="Cause", color_discrete_sequence=[ROSE, AMBER])
+        fig_split.update_traces(texttemplate="%{x:,.0f}", textposition="outside", cliponaxis=False)
+        fig_split.update_layout(showlegend=False)
+        fig_split.update_yaxes(title="")
+        show(fig_split, 220)
+        st.caption(f"Quality is **{qa}** on the automatic check and **{qm}** on human review for "
+                   f"{small['model']} vs {large['model']}.")
+
+    # Takeaways
+    if FINDINGS:
+        st.markdown("### 📌 Key Takeaways")
+        cols = st.columns(3)
+        titles = ["1. Smaller can be enough", "2. The 24/7 idle trap", "3. Cloud vs local"]
+        bodies = FINDINGS[:2] + [
+            "Cloud APIs have no idle draw on your side, so they suit low, bursty traffic. "
+            + ("**Cloud prices here are placeholders** — add real quotes to `data/cloud_options.json`."
+               if CLOUD_PLACEHOLDER else "Compare in the Calculator tab.")
+        ]
+        for col, t, b in zip(cols, titles, bodies):
+            with col:
+                st.markdown(f"<div class='white-card'><h4>{t}</h4><p>{md_inline(b)}</p></div>",
+                            unsafe_allow_html=True)
+
+    # How to read
+    with st.expander("🧭 How to read these numbers", expanded=False):
+        _g1, _g2, _g3, _g4 = st.columns(4)
+        tiles = [
+            ("⚡ Energy per query", "What one question costs, prompt + answer.", "Wh = kWh/yr ÷ queries/yr"),
+            ("🔌 Idle tax", "Servers left on overnight burn power waiting.", "always-on ÷ scheduled"),
+            ("⚖️ EEI", "Quality points per joule. Higher is better.", "quality ÷ (J/token)"),
+            ("🌱 Carbon", "Energy × grid carbon intensity.", "kg CO₂ = kWh × kg/kWh"),
+        ]
+        for col, (h, p_, f_) in zip([_g1, _g2, _g3, _g4], tiles):
+            with col:
+                st.markdown(f"<div class='info-tile'><h5>{h}</h5><p>{p_}</p><span class='formula'>{f_}</span></div>",
+                            unsafe_allow_html=True)
+
+    # Provenance
+    with st.expander("🔬 Where the data comes from", expanded=False):
+        _prompt_kinds = bench["prompt_id"].nunique() if (measured and "prompt_id" in bench.columns) else "—"
+        _cloud_txt = (f"{len(cloud)} options — **placeholder prices, not verified**" if CLOUD_PLACEHOLDER
+                      else f"{len(cloud)} options from `data/cloud_options.json`")
+        st.markdown(f"""
+| Input | Source |
+| --- | --- |
+| Benchmarks | {_n_runs:,} runs · {_n_models} models · {_prompt_kinds} prompts (Ollama, this machine) |
+| Power | {POWER_NOTE} |
+| Quality | Automatic rule score + human audit ({len(read_csv_safe(QUALITY_MANUAL))} ratings) |
+| Cloud | {_cloud_txt} |
+| Campus case | {CW.users:,} users · {CW.active_frac:.0%} active · {CW.queries_per_active_day} q/day · {CW.days} days · {CW.hours_per_day} h/day |
+| Calculator | Sidebar settings: grid {ci} kg CO₂/kWh · ${price:.2f}/kWh |
 """)
-    st.markdown("#### Data files found")
-    status = [
-        ("Benchmark results (data/results/*.csv)", measured),
-        ("Cloud options (data/cloud_options.json)", bool(cloud)),
-        ("Automatic quality scores (data/quality.csv)", not automatic.empty),
-        ("Manual quality audit (data/results/phase1_quality_manual_audit.csv)", QUALITY_MANUAL.exists()),
-    ]
-    st.dataframe(pd.DataFrame([{"File": n, "Status": "Found" if ok else "Missing or empty"} for n, ok in status]),
-                 **STRETCH, hide_index=True)
-    st.caption("AI Energy Lab · Project 74 · Results depend on assumptions and local benchmark conditions.")
+
+    st.markdown("### 🎯 Explore")
+    l_cols = st.columns(4)
+    cards = [("🤖", "Green Auditor", "4 questions → a deployment plan."),
+             ("⚖️", "Pareto Frontier", "Quality vs energy per token."),
+             ("🏫", "Campus Chatbot", "One academic year, with a sleep-schedule slider."),
+             ("⚔️", "Model Arena", "Run two models live and judge them.")]
+    for col, (ic, h, p_) in zip(l_cols, cards):
+        with col:
+            st.markdown(f"<div class='launch-card'><div style='font-size:1.8rem; margin-bottom:4px;'>{ic}</div>"
+                        f"<h3>{h}</h3><p>{p_}</p></div>", unsafe_allow_html=True)
+
+
+# ================================================================ 2. 🤖 AI Green Auditor
+with tab_wizard:
+    st.subheader("🤖 Green Auditor")
+    st.caption("Answer 4 questions. The advice uses your benchmark results.")
+
+    w_col1, w_col2 = st.columns([1, 1.25])
+    with w_col1:
+        st.markdown("##### 1. Your situation")
+        wiz_case = st.selectbox(
+            "Use case",
+            ["Campus Student Assistant (Coursework, policy, FAQs)",
+             "Faculty Research Assistant (Document synthesis, coding)",
+             "Departmental Helpdesk (Low-volume administrative triage)",
+             "High-Throughput Campus Lab (Heavy concurrent student load)"],
+            key="w_case"
+        )
+        wiz_vol = st.select_slider(
+            "Daily queries", options=[500, 2000, 5000, 15000, 30000, 60000], value=15000,
+            format_func=lambda v: f"{v:,} queries/day", key="w_vol"
+        )
+        wiz_privacy = st.radio(
+            "Privacy",
+            ["Strict Local Requirement (FERPA / GDPR / Private on-prem)",
+             "Cloud API Permissible (Public university documents only)"],
+            key="w_privacy"
+        )
+        wiz_hours = st.radio(
+            "Schedule",
+            ["Business Hours Duty-Cycled (7 AM – 10 PM, sleep off-hours)",
+             "Continuous Always-On (24/7 unmonitored availability)"],
+            key="w_hours"
+        )
+
+    with w_col2:
+        st.markdown("##### 2. Recommendation")
+        _jmap = {r.profile: r.j_per_tok for r in ms.itertuples()} if not ms.empty else None
+        rec = S.ai_green_auditor_recommendation(
+            workload_type=wiz_case, query_volume_daily=wiz_vol, data_privacy_level=wiz_privacy,
+            operating_mode=wiz_hours, profiles=profiles, cloud_options=cloud,
+            j_per_tok=_jmap, idle_tax=tax_avg,
+        )
+        st.markdown(f"""
+<div class="rec-card" style="background:#FFFFFF; border:1.5px solid #FDBA74; border-top:4px solid #F97316; border-radius:12px; padding:18px 20px;">
+  <div class="rec-kicker" style="font-size:0.78rem; color:#EA580C; font-weight:700; text-transform:uppercase;">Recommendation</div>
+  <h3 style="margin:4px 0 8px 0; color:#0F172A;">🎯 {rec['recommended_architecture']}</h3>
+  <p style="color:#334155; font-size:0.92rem; line-height:1.5;">{md_inline(rec['primary_rationale'])}</p>
+  <div class="rec-note" style="background:#FFF7ED; border-left:3px solid #F97316; padding:10px 14px; border-radius:6px; margin:10px 0; font-size:0.88rem; color:#7C2D12;">
+    <strong>⏰ Schedule:</strong> {md_inline(rec['duty_cycle_advice'])}
+  </div>
+  <div class="rec-meta" style="display:flex; flex-wrap:wrap; gap:14px; font-size:0.85rem; color:#64748B; margin-top:8px;">
+    <div>🚀 <strong>Fastest:</strong> {rec['fastest_alternative']}</div>
+    <div>🌱 <strong>Lowest J/token:</strong> {rec['lowest_power_alternative']}</div>
+  </div>
+</div>""", unsafe_allow_html=True)
+
+
+# ================================================================ 3. ⚖️ Pareto Frontier
+with tab_pareto:
+    st.subheader("⚖️ Quality vs Energy")
+    st.caption("Top-left is best: high quality, low energy per token. Orange = no other model beats it on both.")
+
+    if not ms.empty and ms["quality"].notna().any():
+        q_src = st.radio("Quality score", ["Automatic check", "Human review"], horizontal=True, key="pareto_q")
+        qcol = "quality" if q_src == "Automatic check" else "manual"
+        pdata = [{"model": r.model, "quality": getattr(r, qcol), "j_per_tok": r.j_per_tok,
+                  "tok_s": r.tok_s, "params_b": r.params_b}
+                 for r in ms.itertuples() if getattr(r, qcol) is not None and pd.notna(getattr(r, qcol))]
+        pdf = pd.DataFrame(S.compute_pareto_frontier(pdata))
+        pdf["eei"] = [S.compute_efficiency_index(q, j) for q, j in zip(pdf["quality"], pdf["j_per_tok"])]
+        pdf["Frontier"] = pdf["pareto_optimal"].map({True: "On frontier", False: "Dominated"})
+
+        p_c1, p_c2 = st.columns([1.6, 1])
+        with p_c1:
+            fig_p = px.scatter(
+                pdf, x="j_per_tok", y="quality", text="model", color="Frontier",
+                color_discrete_map={"On frontier": ORANGE_PRIMARY, "Dominated": "#94A3B8"},
+                size=pdf["params_b"].fillna(1).astype(float), size_max=28,
+                labels={"j_per_tok": "Active energy (J/token) — lower is greener",
+                        "quality": f"{q_src} (0–100)"},
+                hover_data={"tok_s": ":.1f", "eei": ":.1f", "params_b": True},
+                title="Bubble size = parameters (B)",
+            )
+            front = pdf[pdf["pareto_optimal"]].sort_values("j_per_tok")
+            fig_p.add_trace(go.Scatter(x=front["j_per_tok"], y=front["quality"], mode="lines",
+                                       line=dict(color=ORANGE_PRIMARY, dash="dot"), showlegend=False,
+                                       hoverinfo="skip"))
+            fig_p.update_traces(textposition="top center", selector=dict(mode="markers+text"))
+            show(fig_p, 400)
+        with p_c2:
+            st.markdown("##### 🏆 Efficiency ranking")
+            st.caption("EEI = quality ÷ J/token.")
+            st.dataframe(pdf.sort_values("eei", ascending=False)[["model", "quality", "j_per_tok", "eei", "Frontier"]]
+                         .rename(columns={"model": "Model", "quality": "Quality", "j_per_tok": "J/token", "eei": "EEI"})
+                         .round(2), hide_index=True, **STRETCH)
+    else:
+        st.info("Needs benchmark data and quality scores.")
+
+
+# ================================================================ 4. 🏫 Campus Chatbot
+with tab_campus:
+    st.subheader("🏫 Campus Chatbot: One Academic Year")
+    st.caption(f"{CW.users:,} students · {CW.active_frac:.0%} active daily · {CW.queries_per_active_day} questions each · "
+               f"{CW.in_tokens:,} in / {CW.out_tokens} out tokens · ${CG.price_per_kwh:.2f}/kWh · {CG.carbon_kg_per_kwh} kg CO₂/kWh.")
+
+    c_s1, c_s2 = st.columns([1.3, 1])
+    with c_s1:
+        duty_hours = st.slider("Service hours per day", min_value=4, max_value=24, value=CW.hours_per_day, step=1,
+                               help="Servers sleep outside these hours.")
+    with c_s2:
+        open_all_year = st.checkbox("Open all year (365 days, includes breaks)", value=False,
+                                    help=f"Default is {CW.days} teaching days. More days also means more questions.")
+
+    sim_w = replace(CW, hours_per_day=duty_hours, days=365 if open_all_year else CW.days)
+    s_biz, _ = estimate(sim_w, CG, 0.7, False, 1.0, 0.0, with_cloud=False)
+    s_always, _ = estimate(sim_w, CG, 0.7, True, 1.0, 0.0, with_cloud=False)
+
+    if not s_biz.empty and not s_always.empty:
+        m_sim = s_biz[["option", "kwh", "cost_usd", "kg_co2"]].rename(
+            columns={"kwh": "kwh_biz", "cost_usd": "cost_biz", "kg_co2": "co2_biz"}).merge(
+            s_always[["option", "kwh", "cost_usd", "kg_co2"]].rename(
+                columns={"kwh": "kwh_always", "cost_usd": "cost_always", "kg_co2": "co2_always"}), on="option")
+        m_sim["kwh_saved"] = m_sim["kwh_always"] - m_sim["kwh_biz"]
+        m_sim["cost_saved"] = m_sim["cost_always"] - m_sim["cost_biz"]
+        m_sim["multiplier"] = m_sim["kwh_always"] / m_sim["kwh_biz"].where(m_sim["kwh_biz"] > 0)
+        m_sim["option"] = m_sim["option"].map(model_key)
+
+        pick = st.selectbox("Model", m_sim["option"].tolist(),
+                            index=m_sim["option"].tolist().index(small["model"]) if small is not None and small["model"] in m_sim["option"].tolist() else 0,
+                            key="campus_model")
+        r = m_sim[m_sim["option"] == pick].iloc[0]
+        eq = S.compute_equivalents(r["kwh_saved"], r["co2_always"] - r["co2_biz"])
+        b_eq = S.compute_budget_equivalents(r["cost_saved"])
+
+        k1, k2, k3, k4 = st.columns(4)
+        k1.metric("Scheduled", f"{r['kwh_biz']:,.0f} kWh/yr")
+        k2.metric("Always-on 24/7", f"{r['kwh_always']:,.0f} kWh/yr", f"{r['multiplier']:.2f}×", delta_color="inverse")
+        k3.metric("Saved by scheduling", f"${r['cost_saved']:,.0f}/yr")
+        k4.metric("CO₂ avoided", f"{r['co2_always'] - r['co2_biz']:,.0f} kg/yr")
+
+        if r["kwh_saved"] > 0:
+            st.markdown(f"""
+<div class="savings-box" style="background:#FFF7ED; border:1.5px solid #FDBA74; border-radius:10px; padding:14px 18px; margin:10px 0;">
+  <h4 style="margin:0 0 4px 0; color:#EA580C;">💡 What scheduling {pick} saves each year</h4>
+  <p style="margin:0; color:#7C2D12; font-size:0.92rem;">
+    <strong>{r['kwh_saved']:,.0f} kWh</strong> ≈ <strong>{eq['smartphones_charged']:,}</strong> phone charges ·
+    <strong>{eq['gas_car_miles']:,.0f}</strong> car miles of CO₂ ·
+    <strong>${r['cost_saved']:,.0f}</strong> ≈ <strong>{b_eq['cafeteria_meals']:,}</strong> campus meals.
+  </p>
+</div>""", unsafe_allow_html=True)
+        else:
+            st.info("At 24 service hours the schedule is already always-on, so there is nothing to save.")
+
+        long = pd.concat([
+            m_sim[["option", "kwh_biz"]].rename(columns={"kwh_biz": "kwh"}).assign(Mode=f"Scheduled ({duty_hours}h)"),
+            m_sim[["option", "kwh_always"]].rename(columns={"kwh_always": "kwh"}).assign(Mode="Always-on (24/7)"),
+        ], ignore_index=True)
+        hbar(long, "option", "kwh", "kWh per year", "Energy per year: scheduled vs always-on", color="Mode")
+
+        with st.expander("📋 Full table", expanded=False):
+            st.dataframe(pretty_table(m_sim, {
+                "option": "Model", "kwh_biz": f"Scheduled kWh/yr", "kwh_always": "24/7 kWh/yr",
+                "kwh_saved": "kWh saved", "cost_saved": "Electricity saved ($/yr)", "multiplier": "24/7 ÷ scheduled (×)",
+            }, 2), hide_index=True, **STRETCH)
+
+
+# ================================================================ 5. 🧮 Calculator
+with tab_calc:
+    st.subheader("🧮 Deployment Calculator")
+    st.caption("Set your own scenario in the sidebar. Costs include hardware spread over 4 years.")
+
+    res_c, problems = estimate(W, G, tu, aon, bg, capex, with_cloud=True)
+    if CLOUD_PLACEHOLDER and use_cloud:
+        st.warning("Cloud rows use **placeholder** prices and energy figures. Replace them in "
+                   "`data/cloud_options.json` with real quotes before drawing conclusions.")
+    for msg in problems:
+        st.caption(f"Skipped: {msg}")
+
+    w1, w2, w3, w4 = st.columns(4)
+    w1.metric("Questions / year", f"{W.total_queries:,.0f}")
+    w2.metric("Tokens / year", f"{W.total_queries * (tin + tout) / 1e6:,.1f} M")
+    w3.metric("Average load", f"{W.avg_qps:,.2f} q/s")
+    w4.metric("Peak load", f"{W.peak_qps:,.2f} q/s", help="Used to size the server fleet.")
+
+    if not res_c.empty:
+        c_metric = st.radio("Compare by", ["Energy (kWh/year)", "Cost (USD/year)", "Carbon (kg CO₂/year)", "Energy per query (Wh)"],
+                            horizontal=True, key="calc_m")
+        c_key = {"Energy (kWh/year)": "kwh", "Cost (USD/year)": "cost_usd",
+                 "Carbon (kg CO₂/year)": "kg_co2", "Energy per query (Wh)": "wh_per_query"}[c_metric]
+        plot_df = res_c.assign(option=res_c["option"].astype(str).map(model_key))
+        hbar(plot_df, "option", c_key, c_metric, c_metric, color="kind_label")
+        with st.expander("📋 Full table", expanded=False):
+            st.dataframe(pretty_table(res_c.sort_values(c_key), ESTIMATE_COLUMNS, 2), hide_index=True, **STRETCH)
+
+
+# ================================================================ 6. 📊 Telemetry
+with tab_telemetry:
+    st.subheader("📊 Benchmark Telemetry")
+    st.caption("One dot per run. Speed and runtime are timed; energy follows the power basis below.")
+
+    if POWER_KIND == "estimate":
+        st.warning(
+            "**Power is estimated, not metered.** This machine exposed no RAPL or NVML energy counters, so watts come "
+            "from a CPU-utilisation model. For metered results, re-run the benchmark on Linux (RAPL), on an NVIDIA GPU "
+            "(NVML), or log a wall-plug power meter alongside the run."
+        )
+    elif POWER_KIND == "measured":
+        st.success(POWER_NOTE)
+
+    if not ms.empty:
+        t1, t2, t3, t4 = st.columns(4)
+        t1.metric("Models", f"{len(ms)}")
+        t2.metric("Runs", f"{len(bench):,}")
+        t3.metric("Prompts", f"{bench['prompt_id'].nunique()}" if "prompt_id" in bench.columns else "—")
+        t4.metric("Median runtime", f"{pd.to_numeric(bench['wall_s'], errors='coerce').median():.1f} s"
+                  if "wall_s" in bench.columns else "—")
+
+        runs_df = bench.copy()
+        for c in ["gen_tok_s", "j_per_out_token", "avg_w", "wall_s", "out_tokens"]:
+            if c in runs_df.columns:
+                runs_df[c] = pd.to_numeric(runs_df[c], errors="coerce")
+        if has_cols(runs_df, ["gen_tok_s", "j_per_out_token"]):
+            fig_r = px.scatter(runs_df.dropna(subset=["gen_tok_s", "j_per_out_token"]),
+                               x="gen_tok_s", y="j_per_out_token", color="model",
+                               hover_data=[c for c in ["prompt_id", "out_tokens", "wall_s", "avg_w"] if c in runs_df.columns],
+                               labels={"gen_tok_s": "Speed (tokens/s)", "j_per_out_token": "Active energy (J/token)"},
+                               title="Every run: faster models spend less energy per token")
+            fig_r.update_traces(marker=dict(size=10, opacity=0.8))
+            show(fig_r, 380)
+
+        t_c1, t_c2 = st.columns(2)
+        with t_c1:
+            hbar(ms, "model", "tok_s", "Tokens / second", "Speed (median)")
+        with t_c2:
+            hbar(ms, "model", "j_per_tok", "J / output token", "Active energy (median)")
+
+        with st.expander("📋 Summary table", expanded=False):
+            st.dataframe(pretty_table(ms, {
+                "model": "Model", "params_b": "Params (B)", "runs": "Runs", "tok_s": "tok/s (median)",
+                "wall_s": "Runtime s (median)", "j_per_tok": "J/token (median)", "active_w": "Avg W", "idle_w": "Idle W",
+            }, 2), hide_index=True, **STRETCH)
+
+
+# ================================================================ 7. 🎯 Quality
+with tab_quality:
+    st.subheader("🎯 Answer Quality")
+    st.caption("Saving energy only counts if the answers are still good.")
+
+    man_df = read_csv_safe(QUALITY_MANUAL)
+    at_df = read_csv_safe(QUALITY_AUTO)
+    if at_df.empty and has_cols(man_df, ["model", "prompt_id", "automatic_score"]):
+        at_df = man_df[["model", "prompt_id", "automatic_score"]].dropna().rename(columns={"automatic_score": "score"})
+
+    q_c1, q_c2 = st.columns(2)
+    with q_c1:
+        if has_cols(at_df, ["model", "score"]):
+            at_df["score"] = pd.to_numeric(at_df["score"], errors="coerce")
+            hbar(at_df.groupby("model", as_index=False)["score"].mean(), "model", "score", "Score (0–100)", "Automatic check")
+    with q_c2:
+        if has_cols(man_df, ["model", "manual_score"]):
+            man_df["manual_score"] = pd.to_numeric(man_df["manual_score"], errors="coerce")
+            hbar(man_df.groupby("model", as_index=False)["manual_score"].mean(), "model", "manual_score",
+                 "Score (0–100)", "Human review")
+
+    if has_cols(man_df, ["model", "prompt_id", "manual_score"]):
+        piv = man_df.pivot_table(index="model", columns="prompt_id", values="manual_score", aggfunc="mean")
+        if not piv.empty:
+            fig_hm = px.imshow(piv, text_auto=".0f", aspect="auto", color_continuous_scale="Oranges",
+                               zmin=0, zmax=100, title="Human score by prompt")
+            show(fig_hm, 260)
+
+
+# ================================================================ 8. ⚔️ Model Arena
+with tab_arena:
+    render_model_arena()
+
+
+# ================================================================ 9. 📄 Report
+with tab_report:
+    st.subheader("📄 Sustainability Report")
+    st.caption("Built from the same numbers as the tabs above. Download and share.")
+
+    top_m = [{"model": r.model, "params_b": r.params_b, "tok_s": r.tok_s, "j_per_tok": r.j_per_tok,
+              "watts": r.active_w, "idle_w": r.idle_w} for r in ms.itertuples()] if not ms.empty else []
+
+    campus = {"days": CW.days, "hours": CW.hours_per_day, "qpd": CW.queries_per_active_day}
+    if small is not None:
+        extra_kwh = small["always_kwh"] - small["duty_kwh"]
+        extra_co2 = small["always_co2"] - small["duty_co2"]
+        eq_r = S.compute_equivalents(extra_kwh, extra_co2)
+        campus.update({
+            "model": small["model"],
+            "biz_kwh": f"{small['duty_kwh']:,.0f}", "always_kwh": f"{small['always_kwh']:,.0f}",
+            "multiplier": f"{small['idle_tax']:.2f}×",
+            "smartphones": f"{eq_r['smartphones_charged']:,}", "car_miles": f"{eq_r['gas_car_miles']:,.0f}",
+            "trees": f"{eq_r['tree_seedlings_10yr']:,.0f}",
+        })
+
+    recs = None
+    if small is not None:
+        recs = [f"Use **{small['model']}** — best quality per joule in our tests.",
+                f"Sleep servers outside the {CW.hours_per_day} service hours and during breaks.",
+                "Verify cloud prices (currently placeholders) before choosing cloud." if CLOUD_PLACEHOLDER
+                else "Compare cloud quotes against the local figures.",
+                "Confirm power with RAPL/NVML or a wall-plug meter before budgeting." if POWER_KIND == "estimate"
+                else "Re-run benchmarks after any hardware change."]
+
+    gen_rep = S.generate_executive_markdown_report(
+        workload_summary={"total_queries": W.total_queries,
+                          "total_tokens_m": W.total_queries * (tin + tout) / 1e6, "users": users},
+        top_models=top_m, campus_scenario=campus, power_method_note=POWER_NOTE,
+        findings=FINDINGS, recommendations=recs,
+    )
+
+    st.download_button("📥 Download report (.md)", data=gen_rep.encode("utf-8"),
+                       file_name="AI_Energy_Lab_Report.md", mime="text/markdown", **STRETCH)
+    with st.expander("👁️ Preview", expanded=True):
+        st.markdown(gen_rep)

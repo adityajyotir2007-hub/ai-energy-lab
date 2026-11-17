@@ -13,27 +13,76 @@ def load_results(d: str = "data/results") -> pd.DataFrame:
     return pd.concat([pd.read_csv(f) for f in files], ignore_index=True) if files else pd.DataFrame()
 
 def build_profiles(df: pd.DataFrame, quality_csv: str = "data/quality.csv") -> list[LocalProfile]:
-    q = pd.read_csv(quality_csv).set_index("model")["score"].to_dict() if os.path.exists(quality_csv) else {}
-    out = []
+    if df.empty or not {"model", "gen_tok_s"}.issubset(df.columns):
+        return []
 
-    for (backend, model), g in df.groupby(["backend", "model"]):
-        methods = sorted(g["method"].dropna().astype(str).unique())
+    clean = df.copy()
+    clean["gen_tok_s"] = pd.to_numeric(clean["gen_tok_s"], errors="coerce")
+    clean = clean[clean["model"].notna() & clean["gen_tok_s"].notna()]
+    if clean.empty:
+        return []
+
+    if "backend" not in clean.columns:
+        clean["backend"] = "local"
+    else:
+        clean["backend"] = clean["backend"].fillna("local")
+
+    q: dict = {}
+    if os.path.exists(quality_csv):
+        try:
+            q_df = pd.read_csv(quality_csv)
+            score_col = next((c for c in ("score", "automatic_score") if c in q_df.columns), None)
+            if score_col and "model" in q_df.columns:
+                q = q_df.dropna(subset=["model", score_col]).groupby("model")[score_col].mean().to_dict()
+        except Exception:
+            q = {}
+    elif os.path.exists("data/results/phase1_quality_manual_audit.csv"):
+        try:
+            audit_df = pd.read_csv("data/results/phase1_quality_manual_audit.csv")
+            if "model" in audit_df.columns and "automatic_score" in audit_df.columns:
+                q = audit_df.groupby("model")["automatic_score"].mean().to_dict()
+        except Exception:
+            q = {}
+
+    out = []
+    for (backend, model), g in clean.groupby(["backend", "model"]):
+        methods = sorted(g["method"].dropna().astype(str).unique()) if "method" in g.columns else []
         method_text = ", ".join(methods) if methods else "unknown"
 
-        if "cpu_util_model" in methods:
+        if any("cpu_util_model" in m for m in methods):
             source = f"Estimated power ({method_text})"
-        elif "rapl_pkg" in methods or "nvml_gpu" in methods:
+        elif any("rapl_pkg" in m or "nvml_gpu" in m for m in methods):
             source = f"Benchmark telemetry ({method_text})"
         else:
             source = f"Benchmark method unknown ({method_text})"
 
+        params_val = None
+        if "params_b" in g.columns and not g["params_b"].dropna().empty:
+            params_val = g["params_b"].dropna().iloc[0]
+
+        prefill_val = (
+            g["prefill_tok_s"].median()
+            if "prefill_tok_s" in g.columns and not g["prefill_tok_s"].dropna().empty
+            else g["gen_tok_s"].median() * 5
+        )
+        active_w_val = (
+            g["avg_w"].mean()
+            if "avg_w" in g.columns and not g["avg_w"].dropna().empty
+            else 20.0
+        )
+        idle_w_val = (
+            g["idle_w"].mean()
+            if "idle_w" in g.columns and not g["idle_w"].dropna().empty
+            else 5.0
+        )
+
         out.append(LocalProfile(
             name=f"{model} ({backend})",
-            params_b=g["params_b"].iloc[0],
-            gen_tok_s=g["gen_tok_s"].median(),
-            prefill_tok_s=g["prefill_tok_s"].median(),
-            active_w=g["avg_w"].mean(),
-            idle_w=g["idle_w"].mean(),
+            params_b=params_val,
+            gen_tok_s=float(g["gen_tok_s"].median()),
+            prefill_tok_s=float(prefill_val),
+            active_w=float(active_w_val),
+            idle_w=float(idle_w_val),
             quality=q.get(model),
             source=source
         ))

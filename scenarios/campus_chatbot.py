@@ -14,7 +14,17 @@ G = C.Grid()
 def run():
     df = load_results()
     profiles = build_profiles(df) if not df.empty else placeholder_profiles()
-    cloud = json.load(open("data/cloud_options.json"))
+    try:
+        with open("data/cloud_options.json", encoding="utf-8") as f:
+            cloud = json.load(f)
+    except Exception:
+        cloud = []
+    if not cloud:
+        try:
+            with open("data/cloud_options.backup.json", encoding="utf-8") as f:
+                cloud = json.load(f)
+        except Exception:
+            cloud = []
     rows = [C.local_estimate(W, p, G) for p in profiles]
     rows += [C.local_estimate(W, p, G, always_on=True) | {"option": p.name + " [24/7]"} for p in profiles]
     rows += [C.cloud_estimate(W, o, G) for o in cloud]

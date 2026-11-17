@@ -1,0 +1,10 @@
+ts,backend,machine,model,params_b,prompt_id,rep,prompt_tokens,out_tokens,wall_s,prefill_tok_s,gen_tok_s,joules,avg_w,idle_w,active_j,j_per_out_token,method,codecarbon_kg
+2026-10-25T10:49:03,ollama,jyotiaditya,llama3.2:1b,1.0,short,0,42,84,7.107,70.58,18.77,313.19,44.07,24.99,135.58,1.614,cpu_util_model,
+2026-10-25T10:49:10,ollama,jyotiaditya,llama3.2:1b,1.0,short,1,44,83,6.98,70.8,19.21,272.21,39.0,24.99,97.77,1.1779,cpu_util_model,
+2026-10-25T10:49:17,ollama,jyotiaditya,llama3.2:1b,1.0,short,2,42,85,7.091,79.23,18.81,286.66,40.43,24.99,109.45,1.2877,cpu_util_model,
+2026-10-25T10:49:31,ollama,jyotiaditya,llama3.2:1b,1.0,medium,0,59,199,14.703,52.04,17.26,780.06,53.06,24.99,412.6,2.0734,cpu_util_model,
+2026-10-25T10:49:44,ollama,jyotiaditya,llama3.2:1b,1.0,medium,1,60,174,12.102,67.9,18.96,517.0,42.72,24.99,214.54,1.233,cpu_util_model,
+2026-10-25T10:49:56,ollama,jyotiaditya,llama3.2:1b,1.0,medium,2,63,166,12.838,56.42,17.15,653.35,50.89,24.99,332.51,2.0031,cpu_util_model,
+2026-10-25T10:50:44,ollama,jyotiaditya,llama3.2:1b,1.0,long_context,0,1664,70,47.82,40.92,13.7,2405.44,50.3,24.99,1210.35,17.2907,cpu_util_model,
+2026-10-25T10:51:38,ollama,jyotiaditya,llama3.2:1b,1.0,long_context,1,1665,85,53.543,40.45,8.25,2908.04,54.31,24.99,1569.92,18.4696,cpu_util_model,
+2026-10-25T10:52:30,ollama,jyotiaditya,llama3.2:1b,1.0,long_context,2,1664,100,52.47,39.99,11.39,2875.39,54.8,24.99,1564.08,15.6408,cpu_util_model,
