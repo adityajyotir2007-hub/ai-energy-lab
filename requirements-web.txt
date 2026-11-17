@@ -2,3 +2,5 @@ psutil
 pandas
 plotly
 streamlit
+requests
+codecarbon

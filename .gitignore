@@ -28,6 +28,8 @@ data/results/*
 !data/results/ollama_20261025_155531.csv
 !data/results/ollama_20261102_123029.csv
 !data/results/phase1_quality_manual_audit.csv
+!data/results/quality_20261025_152427.csv
+!data/results/quality_20261025_155747.csv
 
 # OS and editor files
 .DS_Store

@@ -836,12 +836,206 @@ if small is not None and large is not None:
 res_base, _ = estimate(W, G, tu, aon, bg, capex, with_cloud=True)
 res_local = res_base[res_base["kind"] == "local"] if not res_base.empty else res_base
 
-# ---------------------------------------------------------------- Theme toggle + data banner (above tabs)
-_tb1, _tb2 = st.columns([6, 1])
+# ---------------------------------------------------------------- Landing page (shown before the dashboard)
+st.session_state.setdefault("entered", False)
+
+
+def _toggle_theme():
+    st.session_state.dark_mode = not st.session_state.dark_mode
+
+
+def _enter_dashboard():
+    st.session_state.entered = True
+
+
+def _go_home():
+    st.session_state.entered = False
+
+
+def render_landing() -> None:
+    dark = st.session_state.dark_mode
+    P = dict(
+        surface="#111A2E" if dark else "#FFFFFF",
+        surface2="#16213A" if dark else "#FFF7ED",
+        border="#24324D" if dark else "#E2E8F0",
+        text="#F1F5F9" if dark else "#0F172A",
+        muted="#A9B7CB" if dark else "#475569",
+        accent="#FB923C" if dark else "#EA580C",
+        hero=("radial-gradient(900px 380px at 0% 0%, rgba(249,115,22,0.22), transparent 60%),"
+              "linear-gradient(135deg, #111A2E 0%, #0F172A 100%)") if dark else
+             ("radial-gradient(900px 380px at 0% 0%, rgba(249,115,22,0.18), transparent 60%),"
+              "linear-gradient(135deg, #FFFFFF 0%, #FFF7ED 100%)"),
+        shadow="0 10px 30px rgba(0,0,0,0.35)" if dark else "0 10px 30px rgba(15,23,42,0.06)",
+    )
+    css = """
+<style>
+[data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"], [data-testid="collapsedControl"] { display: none !important; }
+.stApp .lp-nav { display:flex; align-items:center; gap:10px; padding:4px 0 2px 0; }
+.stApp .lp-logo { font-size:1.15rem !important; font-weight:800 !important; color:__text__ !important; letter-spacing:-0.01em; }
+.stApp .lp-pill { font-size:0.72rem !important; font-weight:700 !important; color:__accent__ !important;
+  border:1px solid #F97316; border-radius:999px; padding:2px 10px; text-transform:uppercase; letter-spacing:0.06em; }
+.stApp .lp-hero { background:__hero__; border:1px solid __border__; border-radius:20px; padding:46px 44px 40px 44px;
+  box-shadow:__shadow__; margin:10px 0 18px 0; }
+.stApp .lp-kicker { color:__accent__ !important; font-weight:700 !important; font-size:0.8rem !important;
+  letter-spacing:0.12em; text-transform:uppercase; margin-bottom:10px; }
+.stApp .lp-hero h1 { color:__text__ !important; font-size:3rem !important; line-height:1.08 !important;
+  font-weight:850 !important; letter-spacing:-0.035em; margin:0 0 14px 0 !important; padding:0 !important; border:none !important; }
+.stApp .lp-hero h1 span { color:#F97316 !important; }
+.stApp .lp-hero p { color:__muted__ !important; font-size:1.1rem !important; line-height:1.6 !important; max-width:720px; margin:0 !important; }
+.stApp .lp-stat { background:__surface__; border:1px solid __border__; border-radius:14px; padding:18px 20px; height:100%; box-shadow:__shadow__; }
+.stApp .lp-stat .v { color:__text__ !important; font-size:1.9rem !important; font-weight:800 !important; letter-spacing:-0.02em; line-height:1.1; }
+.stApp .lp-stat .l { color:__muted__ !important; font-size:0.85rem !important; margin-top:4px; }
+.stApp .lp-section { color:__text__ !important; font-size:1.45rem !important; font-weight:800 !important;
+  letter-spacing:-0.02em; margin:30px 0 4px 0; }
+.stApp .lp-sub { color:__muted__ !important; font-size:0.95rem !important; margin:0 0 14px 0; }
+.stApp .lp-card { background:__surface__; border:1px solid __border__; border-radius:14px; padding:20px 22px; height:100%;
+  box-shadow:__shadow__; transition:transform .18s ease, border-color .18s ease; }
+.stApp .lp-card:hover { transform:translateY(-3px); border-color:#F97316; }
+.stApp .lp-card .ic { font-size:1.6rem; margin-bottom:6px; }
+.stApp .lp-card .n { color:__accent__ !important; font-size:0.75rem !important; font-weight:800 !important; letter-spacing:0.1em; }
+.stApp .lp-card h4 { color:__text__ !important; font-size:1.05rem !important; font-weight:750 !important; margin:4px 0 6px 0 !important; }
+.stApp .lp-card p { color:__muted__ !important; font-size:0.9rem !important; line-height:1.5 !important; margin:0 !important; }
+.stApp .lp-chip { display:inline-block; background:__surface2__; border:1px solid __border__; color:__text__ !important;
+  border-radius:999px; padding:6px 14px; margin:0 8px 8px 0; font-size:0.85rem !important; font-weight:600 !important; }
+.stApp .lp-cta { background:__surface2__; border:1px solid #F97316; border-radius:18px; padding:28px 30px; margin-top:28px; }
+.stApp .lp-cta h3 { color:__text__ !important; font-size:1.4rem !important; font-weight:800 !important; margin:0 0 4px 0 !important; border:none !important; padding:0 !important; }
+.stApp .lp-cta p { color:__muted__ !important; margin:0 !important; }
+.stApp .lp-foot { color:__muted__ !important; font-size:0.8rem !important; text-align:center; margin:26px 0 6px 0; }
+</style>"""
+    for k, v in P.items():
+        css = css.replace(f"__{k}__", v)
+    st.markdown(css, unsafe_allow_html=True)
+
+    # Nav bar
+    n1, n2 = st.columns([6, 1])
+    with n1:
+        st.markdown("<div class='lp-nav'><span class='lp-logo'>⚡ AI Energy Lab</span>"
+                    "<span class='lp-pill'>Project 74</span></div>", unsafe_allow_html=True)
+    with n2:
+        st.button("☀️ Light" if dark else "🌙 Dark", on_click=_toggle_theme, key="lp_theme", **STRETCH)
+
+    # Hero
+    st.markdown("""
+<div class="lp-hero">
+  <div class="lp-kicker">Energy · Cost · Carbon of AI systems</div>
+  <h1>What does an AI answer<br><span>really cost?</span></h1>
+  <p>We benchmarked language models on our own hardware, priced cloud alternatives, and built a
+     calculator that turns any planned AI deployment into kWh, dollars and CO₂.</p>
+</div>""", unsafe_allow_html=True)
+
+    c1, c2, _sp = st.columns([1.2, 1.2, 3.6])
+    with c1:
+        st.button("🚀 Launch dashboard", type="primary", on_click=_enter_dashboard, key="lp_enter_top", **STRETCH)
+    with c2:
+        st.link_button("⭐ View on GitHub", "https://github.com/adityajyotir2007-hub/ai-energy-lab", **STRETCH)
+
+    # Stats strip — all computed from the benchmark files
+    if not ms.empty:
+        stats = [
+            (f"{len(bench):,}", "benchmark runs"),
+            (f"{len(ms)}", "models compared"),
+            (f"{ms['j_per_tok'].min():.2f}–{ms['j_per_tok'].max():.2f}", "joules per token"),
+            (f"{tax_min:.1f}–{tax_max:.1f}×", "energy cost of 24/7 servers"),
+        ]
+        st.markdown("<div style='height:18px'></div>", unsafe_allow_html=True)
+        for col, (v, l) in zip(st.columns(4), stats):
+            with col:
+                st.markdown(f"<div class='lp-stat'><div class='v'>{v}</div><div class='l'>{l}</div></div>",
+                            unsafe_allow_html=True)
+
+    # How it works
+    st.markdown("<div class='lp-section'>How it works</div>"
+                "<div class='lp-sub'>Three steps from raw measurements to a deployment decision.</div>",
+                unsafe_allow_html=True)
+    steps = [
+        ("01", "📏", "Measure", "Run each model through the same prompts with Ollama, timing every token and logging power."),
+        ("02", "🧮", "Model", "Feed the measurements into a calculator that sizes a server fleet for any workload."),
+        ("03", "✅", "Decide", "Compare local vs cloud, small vs large, scheduled vs always-on — in kWh, $ and CO₂."),
+    ]
+    for col, (n, ic, h, p_) in zip(st.columns(3), steps):
+        with col:
+            st.markdown(f"<div class='lp-card'><div class='n'>STEP {n}</div><div class='ic'>{ic}</div>"
+                        f"<h4>{h}</h4><p>{p_}</p></div>", unsafe_allow_html=True)
+
+    # Headline finding with a real chart
+    if small is not None and large is not None:
+        st.markdown("<div class='lp-section'>The headline finding</div>"
+                    f"<div class='lp-sub'>A campus chatbot for one academic year ({CW.users:,} students, {CW.days} days).</div>",
+                    unsafe_allow_html=True)
+        f1, f2 = st.columns([1.5, 1])
+        with f1:
+            hl = pd.DataFrame({
+                "Setup": [f"{small['model']} · scheduled", f"{large['model']} · scheduled", f"{large['model']} · 24/7"],
+                "kWh": [small["duty_kwh"], large["duty_kwh"], large["always_kwh"]],
+            })
+            fig_hl = px.bar(hl, x="kWh", y="Setup", orientation="h", text="kWh",
+                            color="Setup", color_discrete_sequence=[EMERALD, AMBER, ROSE],
+                            title="Energy per year (kWh)")
+            fig_hl.update_traces(texttemplate="%{x:,.0f}", textposition="outside", cliponaxis=False)
+            fig_hl.update_layout(showlegend=False)
+            fig_hl.update_yaxes(title="", categoryorder="array", categoryarray=list(hl["Setup"])[::-1])
+            show(fig_hl, 260)
+        with f2:
+            ratio = large["always_kwh"] / small["duty_kwh"]
+            st.markdown(f"""
+<div class="lp-card">
+  <div class="n">SMALL MODEL, RUN WELL</div>
+  <h4>{ratio:.1f}× less energy</h4>
+  <p><strong>{small['model']}</strong> on a {CW.hours_per_day}h schedule uses
+     <strong>{small['duty_kwh']:,.0f} kWh</strong> a year. <strong>{large['model']}</strong> left on 24/7 uses
+     <strong>{large['always_kwh']:,.0f} kWh</strong> — about
+     <strong>${large['always_usd'] - small['duty_usd']:,.0f}</strong> more in electricity.</p>
+</div>""", unsafe_allow_html=True)
+
+    # Features
+    st.markdown("<div class='lp-section'>Inside the dashboard</div>"
+                "<div class='lp-sub'>Nine tools, one set of numbers.</div>", unsafe_allow_html=True)
+    feats = [
+        ("🤖", "Green Auditor", "Answer four questions, get a deployment plan."),
+        ("⚖️", "Pareto Frontier", "Which models give the most quality per joule."),
+        ("🏫", "Campus Chatbot", "A full academic year, with a sleep-schedule slider."),
+        ("🧮", "Calculator", "Size a fleet and price it for any workload."),
+        ("📊", "Telemetry", "Every benchmark run — speed, runtime and energy."),
+        ("⚔️", "Model Arena", "Run two models live and judge the answers."),
+    ]
+    for row in (feats[:3], feats[3:]):
+        for col, (ic, h, p_) in zip(st.columns(3), row):
+            with col:
+                st.markdown(f"<div class='lp-card'><div class='ic'>{ic}</div><h4>{h}</h4><p>{p_}</p></div>",
+                            unsafe_allow_html=True)
+        st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
+
+    # Tech stack
+    st.markdown("<div class='lp-section'>Built with</div>", unsafe_allow_html=True)
+    stack = ["Python", "Ollama", "Hugging Face Transformers", "CodeCarbon", "psutil", "Pandas", "Plotly", "Streamlit"]
+    st.markdown("".join(f"<span class='lp-chip'>{s}</span>" for s in stack), unsafe_allow_html=True)
+
+    # Closing CTA
+    st.markdown("""
+<div class="lp-cta">
+  <h3>Plan your own AI deployment</h3>
+  <p>Set your users, hours and grid — see the energy, cost and carbon in seconds.</p>
+</div>""", unsafe_allow_html=True)
+    b1, _sp2 = st.columns([1.2, 4.8])
+    with b1:
+        st.button("🚀 Launch dashboard", type="primary", on_click=_enter_dashboard, key="lp_enter_bottom", **STRETCH)
+
+    note = ("Power figures are estimated from CPU utilisation; runtime and token speed are measured."
+            if POWER_KIND == "estimate" else "Power read from hardware energy counters.")
+    st.markdown(f"<div class='lp-foot'>{note}<br>AI Energy Lab · Project 74</div>", unsafe_allow_html=True)
+
+
+if not st.session_state.entered:
+    render_landing()
+    st.stop()
+
+# ---------------------------------------------------------------- Top bar: home, data banner, theme toggle
+_tb1, _tb_home, _tb2 = st.columns([5, 1, 1])
+with _tb_home:
+    st.button("🏠 Home", on_click=_go_home, key="home_btn", **STRETCH)
 with _tb2:
     st.button("☀️ Light mode" if st.session_state.dark_mode else "🌙 Dark mode",
-              on_click=lambda: st.session_state.update(dark_mode=not st.session_state.dark_mode),
-              key="theme_btn", **STRETCH)
+              on_click=_toggle_theme, key="theme_btn", **STRETCH)
 with _tb1:
     if POWER_KIND == "estimate":
         st.caption("⚠️ **Power is estimated** from CPU utilisation on this machine (no RAPL/NVML counters). "

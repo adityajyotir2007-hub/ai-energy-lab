@@ -1,0 +1,19 @@
+timestamp,model,prompt_id,repeat,word_count,length_ok,complete,done_reason,required_terms_found,required_terms_missing,policy_warnings,rule_score_percent,manual_review_required,eval_count,answer,error
+2026-10-25T15:56:16,granite3.3:2b,short,1,31,True,True,stop,,,,100,False,38,"A library fine is a charge imposed on a borrower for overdue or lost library materials, serving as a financial penalty for not returning items on time or for their destruction.",
+2026-10-25T15:56:50,granite3.3:2b,medium,1,243,True,True,stop,medical certificate,course coordinator; portal; before the deadline,Does not identify the course coordinator,20,True,354,"To request an extension on a deadline, a student should follow a structured approach to ensure clarity and respect for academic integrity. Here's a step-by-step guide:
+
+1. **Identify the Appropriate Authority**: First, determine who has the power to grant extensions. This is typically the course instructor or academic advisor. Check your institution's policies or syllabus for specific procedures.
+
+2. **Prepare a Formal Request**: Draft a polite, concise email or letter outlining your request. Include the following details:
+   - The current deadline.
+   - The proposed new deadline, along with a brief explanation of why it's necessary (e.g., personal emergency, unforeseen circumstances, or a complex topic requiring more time).
+   - A brief statement about the progress you've made so far and how the extension will help you complete the assignment to a satisfactory standard.
+
+3. **Provide Evidence**: Attach any relevant documentation supporting your request, such as medical certificates, proof of personal hardship, or a detailed plan illustrating how the extra time will improve your work.
+
+4. **Be Professional and Respectful**: Maintain a courteous tone throughout your communication. Express your understanding of the academic standards and your commitment to meeting them despite the delay.
+
+5. **Follow Up**: If you haven't received a response within the expected timeframe, politely follow up with the instructor or advisor to inquire about the status of your request.
+
+Remember, it's essential to respect your institution's policies regarding extensions and deadlines. Always ensure your request aligns with the course's academic integrity guidelines.",
+2026-10-25T15:57:47,granite3.3:2b,long_context,1,61,True,True,stop,5%; per day; medical certificate; portal,course coordinator,Presents 15% penalty without adequately qualifying extension approval,63,True,80,"The student should apply for an extension through the portal, providing a medical certificate as evidence of their illness. As the student was ill for three days, they would incur a penalty of 5% per day. Therefore, the total penalty would be 15% on the assignment. It's crucial to apply for the extension well before the deadline to ensure it's considered.",

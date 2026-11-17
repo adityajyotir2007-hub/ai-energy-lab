@@ -1,0 +1,65 @@
+timestamp,model,prompt_id,repeat,word_count,length_ok,complete,done_reason,required_terms_found,required_terms_missing,policy_warnings,rule_score_percent,manual_review_required,eval_count,answer,error
+2026-10-25T15:21:12,gemma3:1b,short,1,38,True,True,stop,,,,100,False,48,"A library fine is a fee charged for overdue items, like books or magazines, and it's a way to encourage returning materials on time.  It's essentially a penalty for not returning things as agreed upon with the library.",
+2026-10-25T15:21:26,gemma3:1b,medium,1,146,True,True,stop,,course coordinator; portal; medical certificate; before the deadline,Unsupported 24-hour rule; Does not identify the course coordinator,0,True,211,"Okay, here’s a 150-word explanation of how to request an extension, designed to be clear and helpful:
+
+**Requesting an Extension**
+
+To request an extension on a deadline, it’s crucial to communicate proactively with your instructor. Start by sending a polite email or messaging them within 24 hours of the deadline. Clearly state the assignment and the specific reason for needing an extension (e.g., illness, family emergency).
+
+Be honest and concise. Don’t over-explain; simply state your request and the new deadline you’re requesting.  It’s best to offer a realistic extension, not a request for an indefinite postponement.
+
+**Who to Contact:**  Reach out to your instructor directly via email or messaging platform.
+
+**What to Provide:**  Provide a brief explanation of the situation and, if possible, include supporting documentation like a doctor’s note (if applicable) or a written statement.  Demonstrate your commitment to completing the assignment successfully.
+
+Good luck!",
+2026-10-25T15:22:02,gemma3:1b,long_context,1,117,True,True,stop,5%; per day; medical certificate; course coordinator; portal,,Possible unsupported penalty or waiver claim,80,True,149,"Okay, here’s the response, focusing on what the student should do and the penalty:
+
+“If a student is late submitting a paper and it’s past the deadline, they will lose 5% of their grade per day until an extension is approved by the course coordinator.  **Extensions require documented evidence such as a medical certificate.**  The student should apply through the portal before the deadline to request an extension.  If an extension is approved, the student will not lose any points.  If an extension is denied, the student will lose 5% of their grade per day until the extension is approved.”
+
+---
+
+**Important Note:** This response directly addresses the policy provided and offers clear guidance for the student.",
+2026-10-25T15:22:12,qwen3:1.7b,short,1,40,True,True,stop,,,,100,False,44,"A library fine is a fee charged to borrowers who fail to return books or materials on time, serving as a way to encourage timely returns. It is typically calculated based on the number of days a item is overdue.",
+2026-10-25T15:22:24,qwen3:1.7b,medium,1,116,True,True,stop,,course coordinator; portal; medical certificate; before the deadline,Does not identify the course coordinator,0,True,138,"To request an extension on a deadline, a student should first identify the deadline and the course or assignment in question. They should then contact their instructor directly, either via email or in person, and clearly state their request. It is important to provide a valid reason for the extension, such as personal circumstances, illness, or other unforeseen events. The student should also include any supporting documentation, such as a doctor's note, a letter from a family member, or a university-issued form, to strengthen their case. The instructor will review the request and decide whether to grant an extension. It is always best to communicate early and respectfully, allowing the instructor time to consider the request.",
+2026-10-25T15:23:03,qwen3:1.7b,long_context,1,84,True,True,stop,5%; per day; medical certificate; course coordinator; portal,,,100,True,108,"If a student was ill for three days, they should apply for an extension through the portal before the deadline, providing documented evidence such as a medical certificate. 
+
+The penalty for late submission would be:
+
+- **Late submissions lose 5% per day** unless an extension is approved by the course coordinator.
+
+Since the student was ill for **three days**, the penalty would be:
+
+- **3 × 5% = 15% penalty**.
+
+Therefore, the student should apply for an extension and the penalty applies as described.",
+2026-10-25T15:23:11,llama3.2:1b,short,1,72,True,True,stop,,,,100,False,85,"A library fine is a fee charged to individuals who do not return borrowed materials, such as books, audiobooks, or other library items, on time, and is typically used to cover the cost of replacing lost or damaged items. The amount of the fine varies by library, but it is usually a small percentage of the item's value, and is intended to encourage patrons to return borrowed items in a timely manner.",
+2026-10-25T15:23:24,llama3.2:1b,medium,1,147,True,True,stop,,course coordinator; portal; medical certificate; before the deadline,Does not identify the course coordinator,0,True,168,"To request an extension on a deadline, a student should contact their instructor via email or in-person, providing a valid reason for the request. The email should include the original deadline, the new deadline, and a specific date for when the student plans to submit the work. It's essential to be clear and concise in the email, avoiding vague language.
+
+When requesting an extension, it's also helpful to provide evidence to support the request. This can include:
+
+* A detailed outline of the work that needs to be completed
+* A breakdown of the tasks that require the most time and effort
+* Any relevant deadlines or milestones that have been missed
+* A plan for how the work will be completed and submitted on time
+
+By providing this evidence, students can demonstrate their understanding of the assignment and their commitment to completing the work on time.",
+2026-10-25T15:23:35,llama3.2:1b,long_context,1,77,True,True,stop,5%; per day; portal,medical certificate; course coordinator,Presents 15% penalty without adequately qualifying extension approval,47,True,95,"According to the policy, if a student is ill for three days, they should apply for an extension through the portal before the deadline where possible. Since the student was ill for three days, the penalty would be 5% per day for three days, which equals 15% in total.
+
+Therefore, the student should apply for an extension through the portal before the deadline where possible, and the penalty would be 15% (5% per day for three days).",
+2026-10-25T15:23:45,llama3.2:3b,short,1,66,True,True,stop,,,,100,False,76,"A library fine is a penalty charged by a library for late return of borrowed materials, such as books, DVDs, or other items, in accordance with the library's borrowing policies. The fine amount is typically calculated based on the number of days the item is overdue, with higher fines for longer periods of time, and is intended to encourage patrons to return borrowed items on time.",
+2026-10-25T15:24:07,llama3.2:3b,medium,1,156,True,True,stop,,course coordinator; portal; medical certificate; before the deadline,Does not identify the course coordinator,0,True,186,"To request an extension on a deadline, students should contact their instructor or teaching assistant as soon as possible. A polite and concise email or in-person meeting is recommended. The student should clearly state the reason for the request, provide evidence to support their claim (e.g., illness, family emergency, technical issues), and specify the new deadline they are requesting. It's essential to be realistic and provide a specific date for completion. The student should also be prepared to discuss potential solutions or alternatives, such as completing additional work or submitting a revised assignment.
+
+When requesting an extension, students should include the following information:
+
+* A clear explanation of the reason for the request
+* Evidence to support the claim (e.g., doctor's note, proof of family emergency)
+* A specific new deadline for completion
+* A plan for completing the work or submitting a revised assignment
+
+This demonstrates responsibility and a willingness to meet the instructor's expectations.",
+2026-10-25T15:24:27,llama3.2:3b,long_context,1,88,True,True,stop,5%; per day; course coordinator; portal,medical certificate,,83,True,107,"According to the policy text, if a student is ill, they should apply for an extension through the portal before the deadline. 
+
+Since the student was ill for three days, they should apply for an extension as soon as possible. 
+
+As for the penalty, the policy states that late submissions lose 5% per day unless an extension is approved by the course coordinator. Since the student was ill for three days, they would lose 3 x 5% = 15% of the total grade if no extension is approved.",
